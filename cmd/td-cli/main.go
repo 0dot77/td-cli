@@ -101,6 +101,11 @@ func main() {
 		}
 		commands.Instances(instances, jsonOutput)
 
+	case "update":
+		if err := commands.Update(version, jsonOutput); err != nil {
+			fatal(err)
+		}
+
 	case "init":
 		runInit()
 
@@ -183,6 +188,12 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 
 	case "project":
 		return runProject(c, args, jsonOutput)
+
+	case "tools":
+		if len(args) == 0 || args[0] == "list" {
+			return commands.ToolsList(c, jsonOutput)
+		}
+		return fmt.Errorf("unknown tools subcommand: %s (use list)", args[0])
 
 	default:
 		return fmt.Errorf("unknown command: %s\nRun 'td-cli help' for usage", command)
@@ -653,10 +664,12 @@ Commands:
   screenshot [path] [-o file]    Capture TOP as PNG
   project info                   Project metadata
   project save [path]            Save project
+  tools list                     Discover available tools (AI agent discovery)
   docs <operator>                 Operator documentation
   docs search <keyword>          Search operators
   docs api [class]               Python API reference
   init                           Generate CLAUDE.md
+  update                         Self-update from GitHub Releases
   version                        Show version
 
 Global Flags:

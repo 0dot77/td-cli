@@ -14,6 +14,37 @@ import hashlib
 import time
 
 
+def _get_state():
+    """Determine current TouchDesigner state.
+    Returns one of: ready, cooking, error, initializing, playing, paused."""
+    try:
+        # Check for cook errors on the project root
+        root = op('/')
+        if root and hasattr(root, 'errors'):
+            errs = root.errors(recurse=False)
+            if errs:
+                return 'error'
+
+        # Check timeline state
+        if hasattr(op, 'timeline'):
+            tl = op.timeline
+            if tl and not tl.play:
+                return 'paused'
+
+        # Check if the project is still loading
+        if project.name == '':
+            return 'initializing'
+
+        # Check cook rate — if realTime is on and actual FPS is very low, still cooking
+        if hasattr(project, 'realTime') and project.realTime:
+            if hasattr(absTime, 'stepSeconds') and absTime.stepSeconds > 1.0:
+                return 'cooking'
+
+        return 'ready'
+    except Exception:
+        return 'ready'
+
+
 def _write_heartbeat():
     """Write instance heartbeat file for CLI discovery."""
     home = os.path.expanduser('~')
@@ -34,6 +65,7 @@ def _write_heartbeat():
         'timestamp': time.time(),
         'tdVersion': app.version,
         'tdBuild': app.build,
+        'state': _get_state(),
     }
 
     filepath = os.path.join(instances_dir, f'{hash_id}.json')

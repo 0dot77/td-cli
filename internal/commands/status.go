@@ -52,7 +52,11 @@ func Instances(instances []protocol.Instance, jsonOutput bool) {
 
 	fmt.Printf("Found %d instance(s):\n", len(instances))
 	for _, inst := range instances {
-		fmt.Printf("  %-20s  port:%-5d  pid:%-6d  %s\n",
-			inst.ProjectName, inst.Port, inst.PID, inst.ProjectPath)
+		state := inst.State
+		if state == "" {
+			state = "unknown"
+		}
+		fmt.Printf("  %-20s  %-12s  port:%-5d  pid:%-6d  %s\n",
+			inst.ProjectName, "["+state+"]", inst.Port, inst.PID, inst.ProjectPath)
 	}
 }

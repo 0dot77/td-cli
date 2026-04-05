@@ -24,6 +24,7 @@ def handle_request(uri, body):
         '/dat/write': handle_dat_write,
         '/project/info': handle_project_info,
         '/project/save': handle_project_save,
+        '/tools/list': handle_tools_list,
     }
 
     handler = routes.get(uri)
@@ -469,3 +470,132 @@ def handle_project_save(body):
     else:
         project.save()
         return _success('Project saved')
+
+
+# --- tools ---
+
+# Tool schema registry: each entry describes a route's purpose and parameters.
+# This enables AI agents to discover available commands via `td-cli tools list`.
+TOOL_SCHEMAS = [
+    {
+        'name': 'exec',
+        'route': '/exec',
+        'description': 'Execute arbitrary Python code in TouchDesigner',
+        'parameters': [
+            {'name': 'code', 'type': 'string', 'required': True, 'description': 'Python code to execute. Prefix with "return" to get a value back.'},
+        ],
+    },
+    {
+        'name': 'ops/list',
+        'route': '/ops/list',
+        'description': 'List operators at a given path',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': False, 'description': 'Operator path (default: /)'},
+            {'name': 'depth', 'type': 'integer', 'required': False, 'description': 'Search depth (default: 1)'},
+            {'name': 'family', 'type': 'string', 'required': False, 'description': 'Filter by family: TOP, CHOP, SOP, DAT, COMP, MAT'},
+        ],
+    },
+    {
+        'name': 'ops/create',
+        'route': '/ops/create',
+        'description': 'Create a new operator',
+        'parameters': [
+            {'name': 'type', 'type': 'string', 'required': True, 'description': 'Operator type (e.g., noiseTOP, waveCHOP)'},
+            {'name': 'parent', 'type': 'string', 'required': True, 'description': 'Parent operator path'},
+            {'name': 'name', 'type': 'string', 'required': False, 'description': 'Operator name (auto-generated if omitted)'},
+            {'name': 'nodeX', 'type': 'integer', 'required': False, 'description': 'X position (auto-placed if omitted)'},
+            {'name': 'nodeY', 'type': 'integer', 'required': False, 'description': 'Y position (auto-placed if omitted)'},
+        ],
+    },
+    {
+        'name': 'ops/delete',
+        'route': '/ops/delete',
+        'description': 'Delete an operator',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': True, 'description': 'Operator path to delete'},
+        ],
+    },
+    {
+        'name': 'ops/info',
+        'route': '/ops/info',
+        'description': 'Get detailed info about an operator (connections, parameters, errors)',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': True, 'description': 'Operator path'},
+        ],
+    },
+    {
+        'name': 'par/get',
+        'route': '/par/get',
+        'description': 'Get parameters of an operator',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': True, 'description': 'Operator path'},
+            {'name': 'names', 'type': 'array', 'required': False, 'description': 'Specific parameter names (all if omitted)'},
+        ],
+    },
+    {
+        'name': 'par/set',
+        'route': '/par/set',
+        'description': 'Set parameters on an operator',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': True, 'description': 'Operator path'},
+            {'name': 'params', 'type': 'object', 'required': True, 'description': 'Key-value pairs of parameter names and values'},
+        ],
+    },
+    {
+        'name': 'connect',
+        'route': '/connect',
+        'description': 'Connect two operators (wire output to input)',
+        'parameters': [
+            {'name': 'src', 'type': 'string', 'required': True, 'description': 'Source operator path'},
+            {'name': 'dst', 'type': 'string', 'required': True, 'description': 'Destination operator path'},
+            {'name': 'srcIndex', 'type': 'integer', 'required': False, 'description': 'Source output index (default: 0)'},
+            {'name': 'dstIndex', 'type': 'integer', 'required': False, 'description': 'Destination input index (default: 0)'},
+        ],
+    },
+    {
+        'name': 'disconnect',
+        'route': '/disconnect',
+        'description': 'Disconnect two operators',
+        'parameters': [
+            {'name': 'src', 'type': 'string', 'required': True, 'description': 'Source operator path'},
+            {'name': 'dst', 'type': 'string', 'required': True, 'description': 'Destination operator path'},
+        ],
+    },
+    {
+        'name': 'dat/read',
+        'route': '/dat/read',
+        'description': 'Read DAT content (text or table)',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': True, 'description': 'DAT operator path'},
+        ],
+    },
+    {
+        'name': 'dat/write',
+        'route': '/dat/write',
+        'description': 'Write content to a DAT',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': True, 'description': 'DAT operator path'},
+            {'name': 'content', 'type': 'string', 'required': False, 'description': 'Text content to write'},
+            {'name': 'table', 'type': 'array', 'required': False, 'description': 'Table data as array of rows'},
+        ],
+    },
+    {
+        'name': 'project/info',
+        'route': '/project/info',
+        'description': 'Get project metadata (name, folder, TD version, FPS, timeline)',
+        'parameters': [],
+    },
+    {
+        'name': 'project/save',
+        'route': '/project/save',
+        'description': 'Save the project',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': False, 'description': 'Save path (current location if omitted)'},
+        ],
+    },
+]
+
+
+def handle_tools_list(body):
+    """Return schemas for all registered tools, enabling AI agent discovery."""
+    return _success(f'{len(TOOL_SCHEMAS)} tools available', {'tools': TOOL_SCHEMAS})

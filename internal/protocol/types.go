@@ -18,6 +18,7 @@ type Instance struct {
 	Timestamp   float64 `json:"timestamp"`
 	TDVersion   string  `json:"tdVersion"`
 	TDBuild     string  `json:"tdBuild"`
+	State       string  `json:"state"` // ready, cooking, error, initializing, playing, paused
 }
 
 // HealthData is returned by the /health endpoint.

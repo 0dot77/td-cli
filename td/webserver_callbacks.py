@@ -5,7 +5,12 @@ The Web Server DAT should be named 'webserver1' inside TDCliServer COMP.
 """
 
 import json
+import threading
 from typing import Dict, Any
+
+# Serialize all command requests to prevent race conditions
+# when multiple CLI agents hit the same TD instance concurrently.
+_request_lock = threading.Lock()
 
 
 def onHTTPRequest(dat: 'webserverDAT', request: Dict[str, Any],
@@ -25,48 +30,49 @@ def onHTTPRequest(dat: 'webserverDAT', request: Dict[str, Any],
         response['data'] = ''
         return response
 
-    try:
-        if method == 'GET' and uri == '/health':
-            result = {
-                'success': True,
-                'message': 'td-cli server running',
-                'data': {
-                    'version': '0.1.0',
-                    'project': project.name,
-                    'tdVersion': app.version,
-                    'tdBuild': app.build,
+    with _request_lock:
+        try:
+            if method == 'GET' and uri == '/health':
+                result = {
+                    'success': True,
+                    'message': 'td-cli server running',
+                    'data': {
+                        'version': '0.1.0',
+                        'project': project.name,
+                        'tdVersion': app.version,
+                        'tdBuild': app.build,
+                    }
                 }
-            }
-            response['statusCode'] = 200
-            response['statusReason'] = 'OK'
-            response['data'] = json.dumps(result)
+                response['statusCode'] = 200
+                response['statusReason'] = 'OK'
+                response['data'] = json.dumps(result)
 
-        elif method == 'POST':
-            body = json.loads(request['data']) if request.get('data') else {}
-            handler = op('handler')
-            result = handler.module.handle_request(uri, body)
-            response['statusCode'] = 200
-            response['statusReason'] = 'OK'
-            response['data'] = json.dumps(result)
+            elif method == 'POST':
+                body = json.loads(request['data']) if request.get('data') else {}
+                handler = op('handler')
+                result = handler.module.handle_request(uri, body)
+                response['statusCode'] = 200
+                response['statusReason'] = 'OK'
+                response['data'] = json.dumps(result)
 
-        else:
-            response['statusCode'] = 404
-            response['statusReason'] = 'Not Found'
+            else:
+                response['statusCode'] = 404
+                response['statusReason'] = 'Not Found'
+                response['data'] = json.dumps({
+                    'success': False,
+                    'message': f'Unknown endpoint: {method} {uri}',
+                    'data': None
+                })
+
+        except Exception as e:
+            import traceback
+            response['statusCode'] = 500
+            response['statusReason'] = 'Internal Server Error'
             response['data'] = json.dumps({
                 'success': False,
-                'message': f'Unknown endpoint: {method} {uri}',
-                'data': None
+                'message': str(e),
+                'data': {'traceback': traceback.format_exc()}
             })
-
-    except Exception as e:
-        import traceback
-        response['statusCode'] = 500
-        response['statusReason'] = 'Internal Server Error'
-        response['data'] = json.dumps({
-            'success': False,
-            'message': str(e),
-            'data': {'traceback': traceback.format_exc()}
-        })
 
     return response
 
