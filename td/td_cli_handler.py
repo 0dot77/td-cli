@@ -624,11 +624,29 @@ def handle_network_import(body):
 
     created = []
     path_map = {}  # old path -> new op
+    root_path = snapshot.get('rootPath', '/')
 
-    # Phase 1: Create all operators
-    for node in nodes:
+    # Sort nodes by path depth so parents are created before children
+    sorted_nodes = sorted(nodes, key=lambda n: n['path'].count('/'))
+
+    # Phase 1: Create all operators, preserving hierarchy
+    for node in sorted_nodes:
         try:
-            new_op = parent.create(node['type'], node['name'])
+            # Determine the correct parent for this node
+            # Compute relative path from the snapshot root to find the parent
+            old_path = node['path']
+            old_parent_path = '/'.join(old_path.rsplit('/', 1)[:-1]) or '/'
+
+            # Check if the parent was created in this import (nested COMP)
+            if old_parent_path in path_map:
+                actual_parent = path_map[old_parent_path]
+            elif old_parent_path == root_path or old_parent_path == '/':
+                actual_parent = parent
+            else:
+                # Fallback: create under the target parent
+                actual_parent = parent
+
+            new_op = actual_parent.create(node['type'], node['name'])
             new_op.nodeX = node.get('nodeX', 0)
             new_op.nodeY = node.get('nodeY', 0)
             if node.get('comment'):

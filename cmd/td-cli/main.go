@@ -119,6 +119,11 @@ func main() {
 			fatal(err)
 		}
 
+	case "diff":
+		if err := runDiff(cmdArgs, jsonOutput, port, project, timeout); err != nil {
+			fatal(err)
+		}
+
 	default:
 		// Commands that need a TD connection
 		c, err := getClient(port, project, timeout)
@@ -209,9 +214,6 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 			path = args[0]
 		}
 		return commands.Describe(c, path, jsonOutput)
-
-	case "diff":
-		return runDiff(c, args, jsonOutput)
 
 	case "watch":
 		path := "/"
@@ -463,7 +465,7 @@ func runNetwork(c *client.Client, args []string, jsonOutput bool) error {
 	}
 }
 
-func runDiff(c *client.Client, args []string, jsonOutput bool) error {
+func runDiff(args []string, jsonOutput bool, port int, project string, timeout time.Duration) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: td-cli diff <file1> <file2> | td-cli diff --live <snapshot> [path]")
 	}
@@ -490,9 +492,15 @@ func runDiff(c *client.Client, args []string, jsonOutput bool) error {
 		if len(fileArgs) > 1 {
 			path = fileArgs[1]
 		}
+		// Only --live mode needs a TD connection
+		c, err := getClient(port, project, timeout)
+		if err != nil {
+			return err
+		}
 		return commands.DiffLive(c, fileArgs[0], path, jsonOutput)
 	}
 
+	// Offline file-to-file comparison — no TD needed
 	if len(fileArgs) < 2 {
 		return fmt.Errorf("usage: td-cli diff <file1> <file2>")
 	}

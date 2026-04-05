@@ -36,7 +36,9 @@ func Watch(c *client.Client, path string, interval time.Duration, jsonOutput boo
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 
-	fmt.Printf("Monitoring %s (interval: %s, Ctrl+C to stop)\n\n", path, interval)
+	if !jsonOutput {
+		fmt.Printf("Monitoring %s (interval: %s, Ctrl+C to stop)\n\n", path, interval)
+	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
