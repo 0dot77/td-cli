@@ -72,37 +72,22 @@ go build -o td-cli.exe ./cmd/td-cli/
 
 #### 3. Set Up TouchDesigner Server
 
-You must add a small server component inside your TouchDesigner project before `td-cli` can connect.
+You must add the `TDCliServer` component to your TouchDesigner project before `td-cli` can connect.
 
-Step-by-step:
+Recommended setup:
 
 1. Open your project in TouchDesigner.
-2. Create a **Base COMP** at the root level named `TDCliServer`.
-3. Inside `TDCliServer`, create:
-   - `webserver1` as a **Web Server DAT**
-   - `callbacks` as a **Text DAT**
-   - `handler` as a **Text DAT**
-   - `timer1` as a **Timer CHOP**
-   - `chopexec1` as a **CHOP Execute DAT**
+2. Import [`tox/TDCliServer.tox`](tox/TDCliServer.tox) into the root network, or drag it into the project.
+3. Make sure the imported component is named `TDCliServer`.
+4. Open the component and verify that `webserver1` is active on port `9500`.
 
-Required settings:
+That `.tox` already contains the required operators and scripts, so this is the fastest way to get started.
 
-- `webserver1`
-  - `Port` = `9500`
-  - `Active` = `On`
-  - `Callbacks DAT` = `callbacks`
-- `callbacks`
-  - paste the contents of [`td/webserver_callbacks.py`](td/webserver_callbacks.py)
-- `handler`
-  - paste the contents of [`td/td_cli_handler.py`](td/td_cli_handler.py)
-- `timer1`
-  - `Length` = `1` second
-  - `On Done` = `Re-Start`
-  - `Play` = `On`
-- `chopexec1`
-  - point its CHOP parameter to `timer1`
-  - enable the `Off to On` callback
-  - copy the `onTimerPulse` logic from [`td/heartbeat.py`](td/heartbeat.py) into the `onOffToOn` callback
+Manual setup is still possible if you want to build it yourself. The Python source files used by the component are:
+
+- [`td/webserver_callbacks.py`](td/webserver_callbacks.py)
+- [`td/td_cli_handler.py`](td/td_cli_handler.py)
+- [`td/heartbeat.py`](td/heartbeat.py)
 
 Detailed setup notes are also available in [`td/setup_instructions.md`](td/setup_instructions.md).
 
@@ -299,37 +284,22 @@ go build -o td-cli.exe ./cmd/td-cli/
 
 #### 3. TouchDesigner 서버 설정
 
-`td-cli`가 연결되려면 먼저 TouchDesigner 프로젝트 안에 작은 서버 구성을 넣어야 합니다.
+`td-cli`가 연결되려면 먼저 TouchDesigner 프로젝트 안에 `TDCliServer` 컴포넌트를 넣어야 합니다.
 
-순서:
+권장 방법:
 
 1. TouchDesigner에서 프로젝트를 엽니다.
-2. 루트 레벨에 이름이 `TDCliServer`인 **Base COMP**를 만듭니다.
-3. `TDCliServer` 안에 아래 오퍼레이터를 생성합니다.
-   - `webserver1` : **Web Server DAT**
-   - `callbacks` : **Text DAT**
-   - `handler` : **Text DAT**
-   - `timer1` : **Timer CHOP**
-   - `chopexec1` : **CHOP Execute DAT**
+2. [`tox/TDCliServer.tox`](tox/TDCliServer.tox)를 루트 네트워크로 import 하거나 프로젝트에 드래그해서 넣습니다.
+3. 가져온 컴포넌트 이름이 `TDCliServer`인지 확인합니다.
+4. 컴포넌트 안으로 들어가서 `webserver1`이 포트 `9500`에서 활성화되어 있는지 확인합니다.
 
-필수 설정값:
+이 `.tox` 파일 안에는 필요한 오퍼레이터와 스크립트가 이미 들어 있으므로, 가장 빠른 셋업 방법입니다.
 
-- `webserver1`
-  - `Port` = `9500`
-  - `Active` = `On`
-  - `Callbacks DAT` = `callbacks`
-- `callbacks`
-  - [`td/webserver_callbacks.py`](td/webserver_callbacks.py) 내용을 붙여 넣습니다
-- `handler`
-  - [`td/td_cli_handler.py`](td/td_cli_handler.py) 내용을 붙여 넣습니다
-- `timer1`
-  - `Length` = `1`초
-  - `On Done` = `Re-Start`
-  - `Play` = `On`
-- `chopexec1`
-  - CHOP 파라미터를 `timer1`으로 지정합니다
-  - `Off to On` 콜백을 활성화합니다
-  - [`td/heartbeat.py`](td/heartbeat.py)의 `onTimerPulse` 로직을 `onOffToOn` 콜백에 넣습니다
+직접 수동 구성하고 싶다면 아래 Python 소스 파일을 참고하면 됩니다.
+
+- [`td/webserver_callbacks.py`](td/webserver_callbacks.py)
+- [`td/td_cli_handler.py`](td/td_cli_handler.py)
+- [`td/heartbeat.py`](td/heartbeat.py)
 
 더 자세한 설정 설명은 [`td/setup_instructions.md`](td/setup_instructions.md)에도 있습니다.
 
