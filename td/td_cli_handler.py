@@ -30,6 +30,8 @@ def handle_request(uri, body):
         '/network/describe': handle_network_describe,
         '/monitor': handle_monitor,
         '/shaders/apply': handle_shaders_apply,
+        '/tox/export': handle_tox_export,
+        '/tox/import': handle_tox_import,
         '/tools/list': handle_tools_list,
     }
 
@@ -888,6 +890,68 @@ def handle_shaders_apply(body):
     })
 
 
+# --- tox ---
+
+def handle_tox_export(body):
+    """Export a COMP as a .tox file."""
+    import os
+    comp_path = body.get('path', '')
+    output = body.get('output', '')
+
+    if not comp_path:
+        return _error('No COMP path specified')
+    if not output:
+        return _error('No output path specified')
+
+    target = op(comp_path)
+    if target is None:
+        return _error(f'Operator not found: {comp_path}')
+    if not target.isCOMP:
+        return _error(f'{comp_path} is not a COMP')
+
+    try:
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
+        target.save(output)
+        size = os.path.getsize(output)
+        return _success(f'Exported {target.name} to {output}', {
+            'path': comp_path,
+            'output': output,
+            'size': size,
+        })
+    except Exception as e:
+        return _error(f'Export failed: {e}')
+
+
+def handle_tox_import(body):
+    """Import a .tox file into a parent COMP."""
+    import os
+    tox_path = body.get('toxPath', '')
+    parent_path = body.get('parentPath', '/project1')
+    name = body.get('name', '')
+
+    if not tox_path:
+        return _error('No .tox file path specified')
+    if not os.path.exists(tox_path):
+        return _error(f'File not found: {tox_path}')
+
+    parent = op(parent_path)
+    if parent is None:
+        return _error(f'Parent not found: {parent_path}')
+
+    try:
+        # loadTox returns the created COMP
+        new_op = parent.loadTox(tox_path)
+        if name and new_op:
+            new_op.name = name
+        return _success(f'Imported {tox_path}', {
+            'path': new_op.path if new_op else '',
+            'name': new_op.name if new_op else '',
+        })
+    except Exception as e:
+        return _error(f'Import failed: {e}')
+
+
 # --- tools ---
 
 # Tool schema registry: each entry describes a route's purpose and parameters.
@@ -1060,6 +1124,25 @@ TOOL_SCHEMAS = [
             {'name': 'path', 'type': 'string', 'required': True, 'description': 'GLSL TOP operator path'},
             {'name': 'glsl', 'type': 'string', 'required': True, 'description': 'GLSL pixel shader code'},
             {'name': 'uniforms', 'type': 'array', 'required': False, 'description': 'Uniform definitions [{name, type, default, expression}]'},
+        ],
+    },
+    {
+        'name': 'tox/export',
+        'route': '/tox/export',
+        'description': 'Export a COMP as a .tox file',
+        'parameters': [
+            {'name': 'path', 'type': 'string', 'required': True, 'description': 'COMP operator path to export'},
+            {'name': 'output', 'type': 'string', 'required': True, 'description': 'Output .tox file path'},
+        ],
+    },
+    {
+        'name': 'tox/import',
+        'route': '/tox/import',
+        'description': 'Import a .tox file into a parent COMP',
+        'parameters': [
+            {'name': 'toxPath', 'type': 'string', 'required': True, 'description': '.tox file path to import'},
+            {'name': 'parentPath', 'type': 'string', 'required': False, 'description': 'Parent COMP path (default: /project1)'},
+            {'name': 'name', 'type': 'string', 'required': False, 'description': 'Rename the imported COMP'},
         ],
     },
 ]

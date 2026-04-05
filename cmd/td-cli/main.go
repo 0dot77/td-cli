@@ -205,6 +205,9 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 		}
 		return fmt.Errorf("unknown tools subcommand: %s (use list)", args[0])
 
+	case "tox":
+		return runTox(c, args, jsonOutput)
+
 	case "network":
 		return runNetwork(c, args, jsonOutput)
 
@@ -412,6 +415,53 @@ func runProject(c *client.Client, args []string, jsonOutput bool) error {
 		return commands.ProjectSave(c, path, jsonOutput)
 	default:
 		return fmt.Errorf("unknown project subcommand: %s (use info, save)", args[0])
+	}
+}
+
+func runTox(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli tox <export|import> [args]")
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "export":
+		compPath := ""
+		outputFile := ""
+		for i := 0; i < len(args); i++ {
+			if args[i] == "-o" && i+1 < len(args) {
+				outputFile = args[i+1]
+				i++
+			} else if compPath == "" {
+				compPath = args[i]
+			}
+		}
+		if compPath == "" || outputFile == "" {
+			return fmt.Errorf("usage: td-cli tox export <comp_path> -o <file.tox>")
+		}
+		return commands.ToxExport(c, compPath, outputFile, jsonOutput)
+
+	case "import":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli tox import <file.tox> [parent_path] [--name <name>]")
+		}
+		toxPath := args[0]
+		parentPath := "/project1"
+		name := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--name" && i+1 < len(args) {
+				name = args[i+1]
+				i++
+			} else {
+				parentPath = args[i]
+			}
+		}
+		return commands.ToxImport(c, toxPath, parentPath, name, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown tox subcommand: %s (use export, import)", sub)
 	}
 }
 
@@ -791,6 +841,8 @@ Commands:
   screenshot [path] [-o file]    Capture TOP as PNG
   project info                   Project metadata
   project save [path]            Save project
+  tox export <comp> -o <file>    Export COMP as .tox file
+  tox import <file> [parent]     Import .tox into project
   network export [path] [-o f]   Export network as JSON snapshot
   network import <file> [path]   Import network from snapshot
   describe [path]                AI-friendly network description
