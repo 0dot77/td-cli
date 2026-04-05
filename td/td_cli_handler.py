@@ -110,7 +110,11 @@ def handle_ops_list(body):
     if target is None:
         return _error(f'Operator not found: {path}')
 
-    children = target.findChildren(depth=depth)
+    # TD's findChildren(depth=N) returns children at exactly depth N,
+    # not up to depth N. Collect all levels up to the requested depth.
+    children = []
+    for d in range(1, depth + 1):
+        children.extend(target.findChildren(depth=d))
 
     if family:
         family_upper = family.upper()
