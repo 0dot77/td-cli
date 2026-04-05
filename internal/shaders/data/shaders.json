@@ -1,0 +1,115 @@
+{
+  "fbm_noise": {
+    "name": "FBM Noise",
+    "description": "Fractal Brownian Motion noise with octave layering. Classic procedural texture.",
+    "category": "generative",
+    "glsl": "uniform vec4 uTime;\nuniform vec4 uScale;\n\nout vec4 fragColor;\n\nfloat hash(vec2 p) {\n    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);\n}\n\nfloat noise(vec2 p) {\n    vec2 i = floor(p);\n    vec2 f = fract(p);\n    f = f * f * (3.0 - 2.0 * f);\n    float a = hash(i);\n    float b = hash(i + vec2(1.0, 0.0));\n    float c = hash(i + vec2(0.0, 1.0));\n    float d = hash(i + vec2(1.0, 1.0));\n    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);\n}\n\nfloat fbm(vec2 p) {\n    float v = 0.0;\n    float a = 0.5;\n    vec2 shift = vec2(100.0);\n    mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));\n    for (int i = 0; i < 6; i++) {\n        v += a * noise(p);\n        p = rot * p * 2.0 + shift;\n        a *= 0.5;\n    }\n    return v;\n}\n\nvoid main() {\n    vec2 uv = vUV.st;\n    float t = uTime.x * 0.3;\n    float scale = uScale.x;\n    \n    float f = fbm(uv * scale + t);\n    float f2 = fbm(uv * scale + f + t * 0.7);\n    \n    vec3 col = mix(vec3(0.1, 0.2, 0.4), vec3(0.9, 0.6, 0.2), f2);\n    col = mix(col, vec3(0.95, 0.95, 1.0), f * 0.5);\n    \n    fragColor = TDOutputSwizzle(vec4(col, 1.0));\n}",
+    "uniforms": [
+      {"name": "uTime", "type": "float", "default": 0, "expression": "absTime.seconds", "description": "Animation time"},
+      {"name": "uScale", "type": "float", "default": 4.0, "description": "Noise scale"}
+    ],
+    "inputs": [],
+    "tags": ["noise", "procedural", "animated", "organic"]
+  },
+  "voronoi": {
+    "name": "Voronoi Cells",
+    "description": "Animated Voronoi cell pattern with distance-based coloring.",
+    "category": "generative",
+    "glsl": "uniform vec4 uTime;\nuniform vec4 uScale;\n\nout vec4 fragColor;\n\nvec2 random2(vec2 p) {\n    return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);\n}\n\nvoid main() {\n    vec2 uv = vUV.st;\n    float t = uTime.x;\n    float scale = uScale.x;\n    \n    vec2 st = uv * scale;\n    vec2 i_st = floor(st);\n    vec2 f_st = fract(st);\n    \n    float m_dist = 1.0;\n    vec2 m_point;\n    \n    for (int y = -1; y <= 1; y++) {\n        for (int x = -1; x <= 1; x++) {\n            vec2 neighbor = vec2(float(x), float(y));\n            vec2 point = random2(i_st + neighbor);\n            point = 0.5 + 0.5 * sin(t + 6.2831 * point);\n            vec2 diff = neighbor + point - f_st;\n            float dist = length(diff);\n            if (dist < m_dist) {\n                m_dist = dist;\n                m_point = point;\n            }\n        }\n    }\n    \n    vec3 col = vec3(0.0);\n    col += m_dist * 0.8;\n    col.r += smoothstep(0.0, 0.05, m_dist) * m_point.x;\n    col.b += smoothstep(0.0, 0.05, m_dist) * m_point.y;\n    col += 1.0 - smoothstep(0.0, 0.02, m_dist);\n    \n    fragColor = TDOutputSwizzle(vec4(col, 1.0));\n}",
+    "uniforms": [
+      {"name": "uTime", "type": "float", "default": 0, "expression": "absTime.seconds", "description": "Animation time"},
+      {"name": "uScale", "type": "float", "default": 5.0, "description": "Cell density"}
+    ],
+    "inputs": [],
+    "tags": ["voronoi", "cells", "procedural", "animated"]
+  },
+  "plasma": {
+    "name": "Plasma",
+    "description": "Classic plasma effect with layered sine waves and rainbow palette.",
+    "category": "generative",
+    "glsl": "uniform vec4 uTime;\n\nout vec4 fragColor;\n\nvoid main() {\n    vec2 uv = vUV.st;\n    float t = uTime.x;\n    \n    float p1 = sin(uv.x * 10.0 + t * 1.2);\n    float p2 = sin(uv.y * 8.0 - t * 0.9);\n    float p3 = sin((uv.x + uv.y) * 6.0 + t * 0.6);\n    float p4 = sin(length(uv - 0.5) * 12.0 - t * 1.5);\n    float plasma = (p1 + p2 + p3 + p4) * 0.25;\n    \n    vec3 col;\n    col.r = sin(plasma * 3.14 + t * 0.3) * 0.5 + 0.5;\n    col.g = sin(plasma * 3.14 + t * 0.3 + 2.094) * 0.5 + 0.5;\n    col.b = sin(plasma * 3.14 + t * 0.3 + 4.188) * 0.5 + 0.5;\n    \n    fragColor = TDOutputSwizzle(vec4(col, 1.0));\n}",
+    "uniforms": [
+      {"name": "uTime", "type": "float", "default": 0, "expression": "absTime.seconds", "description": "Animation time"}
+    ],
+    "inputs": [],
+    "tags": ["plasma", "rainbow", "classic", "animated"]
+  },
+  "spirograph": {
+    "name": "Spirograph",
+    "description": "Parametric spirograph pattern with glowing lines.",
+    "category": "generative",
+    "glsl": "uniform vec4 uTime;\n\nout vec4 fragColor;\n\nvoid main() {\n    vec2 uv = vUV.st * 2.0 - 1.0;\n    float t = uTime.x * 0.5;\n    \n    float d = 1e10;\n    for (float i = 0.0; i < 200.0; i++) {\n        float a = i * 0.03 + t;\n        float r1 = 0.6, r2 = 0.25, r3 = 0.15;\n        vec2 p = vec2(\n            r1 * cos(a) + r2 * cos(a * 3.7) + r3 * cos(a * 7.3),\n            r1 * sin(a) + r2 * sin(a * 3.7) + r3 * sin(a * 7.3)\n        );\n        d = min(d, length(uv - p));\n    }\n    \n    vec3 col = vec3(0.0);\n    col += 0.005 / (d + 0.005) * vec3(0.4, 0.7, 1.0);\n    col += 0.002 / (d + 0.002) * vec3(1.0, 0.5, 0.2);\n    \n    fragColor = TDOutputSwizzle(vec4(col, 1.0));\n}",
+    "uniforms": [
+      {"name": "uTime", "type": "float", "default": 0, "expression": "absTime.seconds", "description": "Animation time"}
+    ],
+    "inputs": [],
+    "tags": ["spirograph", "parametric", "glow", "animated"]
+  },
+  "bloom": {
+    "name": "Bloom",
+    "description": "Soft bloom/glow post-processing effect. Requires a TOP input.",
+    "category": "postfx",
+    "glsl": "uniform vec4 uIntensity;\n\nout vec4 fragColor;\n\nvoid main() {\n    vec2 uv = vUV.st;\n    vec2 texel = 1.0 / uTDOutputInfo.res.zw;\n    float intensity = uIntensity.x;\n    \n    vec4 sum = vec4(0.0);\n    float weights[5] = float[](0.227, 0.194, 0.121, 0.054, 0.016);\n    \n    // Two-pass approximation in single pass\n    for (int i = -4; i <= 4; i++) {\n        for (int j = -4; j <= 4; j++) {\n            vec2 offset = vec2(float(i), float(j)) * texel * 2.0;\n            float w = weights[abs(i)] * weights[abs(j)];\n            sum += texture(sTD2DInputs[0], uv + offset) * w;\n        }\n    }\n    \n    vec4 original = texture(sTD2DInputs[0], uv);\n    vec4 bloom = max(sum - 0.3, 0.0) * intensity;\n    \n    fragColor = TDOutputSwizzle(original + bloom);\n}",
+    "uniforms": [
+      {"name": "uIntensity", "type": "float", "default": 1.5, "description": "Bloom intensity"}
+    ],
+    "inputs": ["Any TOP as source image"],
+    "tags": ["bloom", "glow", "postfx"]
+  },
+  "chromatic_aberration": {
+    "name": "Chromatic Aberration",
+    "description": "RGB channel offset for a glitchy chromatic aberration look. Requires a TOP input.",
+    "category": "postfx",
+    "glsl": "uniform vec4 uAmount;\n\nout vec4 fragColor;\n\nvoid main() {\n    vec2 uv = vUV.st;\n    vec2 center = uv - 0.5;\n    float amount = uAmount.x;\n    \n    vec2 offsetR = center * amount * 0.01;\n    vec2 offsetB = center * amount * -0.01;\n    \n    float r = texture(sTD2DInputs[0], uv + offsetR).r;\n    float g = texture(sTD2DInputs[0], uv).g;\n    float b = texture(sTD2DInputs[0], uv + offsetB).b;\n    float a = texture(sTD2DInputs[0], uv).a;\n    \n    fragColor = TDOutputSwizzle(vec4(r, g, b, a));\n}",
+    "uniforms": [
+      {"name": "uAmount", "type": "float", "default": 3.0, "description": "Aberration strength"}
+    ],
+    "inputs": ["Any TOP as source image"],
+    "tags": ["chromatic", "aberration", "glitch", "postfx"]
+  },
+  "edge_detect": {
+    "name": "Edge Detection",
+    "description": "Sobel edge detection filter. Requires a TOP input.",
+    "category": "postfx",
+    "glsl": "uniform vec4 uThreshold;\n\nout vec4 fragColor;\n\nvoid main() {\n    vec2 uv = vUV.st;\n    vec2 texel = 1.0 / uTDOutputInfo.res.zw;\n    \n    // Sobel kernels\n    float tl = length(texture(sTD2DInputs[0], uv + vec2(-texel.x, texel.y)).rgb);\n    float t  = length(texture(sTD2DInputs[0], uv + vec2(0.0, texel.y)).rgb);\n    float tr = length(texture(sTD2DInputs[0], uv + vec2(texel.x, texel.y)).rgb);\n    float l  = length(texture(sTD2DInputs[0], uv + vec2(-texel.x, 0.0)).rgb);\n    float r  = length(texture(sTD2DInputs[0], uv + vec2(texel.x, 0.0)).rgb);\n    float bl = length(texture(sTD2DInputs[0], uv + vec2(-texel.x, -texel.y)).rgb);\n    float b  = length(texture(sTD2DInputs[0], uv + vec2(0.0, -texel.y)).rgb);\n    float br = length(texture(sTD2DInputs[0], uv + vec2(texel.x, -texel.y)).rgb);\n    \n    float gx = tl + 2.0*l + bl - tr - 2.0*r - br;\n    float gy = tl + 2.0*t + tr - bl - 2.0*b - br;\n    float edge = sqrt(gx*gx + gy*gy);\n    \n    float threshold = uThreshold.x;\n    edge = smoothstep(threshold, threshold + 0.1, edge);\n    \n    fragColor = TDOutputSwizzle(vec4(vec3(edge), 1.0));\n}",
+    "uniforms": [
+      {"name": "uThreshold", "type": "float", "default": 0.1, "description": "Edge detection threshold"}
+    ],
+    "inputs": ["Any TOP as source image"],
+    "tags": ["edge", "sobel", "detection", "postfx"]
+  },
+  "uv_debug": {
+    "name": "UV Debug",
+    "description": "Visualize UV coordinates as red/green gradient with grid lines.",
+    "category": "utility",
+    "glsl": "uniform vec4 uGridSize;\n\nout vec4 fragColor;\n\nvoid main() {\n    vec2 uv = vUV.st;\n    float grid = uGridSize.x;\n    \n    vec3 col = vec3(uv.x, uv.y, 0.0);\n    \n    // Grid lines\n    vec2 gridUV = fract(uv * grid);\n    float line = step(0.97, gridUV.x) + step(0.97, gridUV.y);\n    col = mix(col, vec3(1.0), line * 0.5);\n    \n    // Center crosshair\n    float cross = step(abs(uv.x - 0.5), 0.002) + step(abs(uv.y - 0.5), 0.002);\n    col = mix(col, vec3(1.0, 1.0, 0.0), cross * 0.8);\n    \n    fragColor = TDOutputSwizzle(vec4(col, 1.0));\n}",
+    "uniforms": [
+      {"name": "uGridSize", "type": "float", "default": 10.0, "description": "Grid subdivision count"}
+    ],
+    "inputs": [],
+    "tags": ["uv", "debug", "grid", "utility"]
+  },
+  "checkerboard": {
+    "name": "Checkerboard",
+    "description": "Animated checkerboard pattern with configurable size and colors.",
+    "category": "utility",
+    "glsl": "uniform vec4 uTime;\nuniform vec4 uScale;\n\nout vec4 fragColor;\n\nvoid main() {\n    vec2 uv = vUV.st;\n    float t = uTime.x;\n    float scale = uScale.x;\n    \n    vec2 grid = floor(uv * scale + t * 0.2);\n    float check = mod(grid.x + grid.y, 2.0);\n    \n    vec3 col1 = vec3(0.15);\n    vec3 col2 = vec3(0.85);\n    vec3 col = mix(col1, col2, check);\n    \n    fragColor = TDOutputSwizzle(vec4(col, 1.0));\n}",
+    "uniforms": [
+      {"name": "uTime", "type": "float", "default": 0, "expression": "absTime.seconds", "description": "Animation time"},
+      {"name": "uScale", "type": "float", "default": 8.0, "description": "Grid size"}
+    ],
+    "inputs": [],
+    "tags": ["checkerboard", "grid", "pattern", "utility"]
+  },
+  "basic_sdf": {
+    "name": "Basic SDF Raymarching",
+    "description": "Simple raymarched scene with a sphere, plane, and lighting. No inputs needed.",
+    "category": "raymarching",
+    "glsl": "uniform vec4 uTime;\n\nout vec4 fragColor;\n\nfloat sdSphere(vec3 p, float r) { return length(p) - r; }\nfloat sdPlane(vec3 p) { return p.y + 1.0; }\n\nfloat scene(vec3 p) {\n    float t = uTime.x;\n    vec3 sp = p - vec3(0.0, sin(t) * 0.3, 0.0);\n    float sphere = sdSphere(sp, 0.8);\n    float plane = sdPlane(p);\n    return min(sphere, plane);\n}\n\nvec3 calcNormal(vec3 p) {\n    vec2 e = vec2(0.001, 0.0);\n    return normalize(vec3(\n        scene(p + e.xyy) - scene(p - e.xyy),\n        scene(p + e.yxy) - scene(p - e.yxy),\n        scene(p + e.yyx) - scene(p - e.yyx)\n    ));\n}\n\nvoid main() {\n    vec2 uv = vUV.st * 2.0 - 1.0;\n    uv.x *= uTDOutputInfo.res.z / uTDOutputInfo.res.w;\n    \n    vec3 ro = vec3(0.0, 0.5, 3.0);\n    vec3 rd = normalize(vec3(uv, -1.5));\n    \n    float t = 0.0;\n    for (int i = 0; i < 80; i++) {\n        vec3 p = ro + rd * t;\n        float d = scene(p);\n        if (d < 0.001 || t > 20.0) break;\n        t += d;\n    }\n    \n    vec3 col = vec3(0.05, 0.05, 0.1);\n    if (t < 20.0) {\n        vec3 p = ro + rd * t;\n        vec3 n = calcNormal(p);\n        vec3 light = normalize(vec3(1.0, 2.0, 1.5));\n        float diff = max(dot(n, light), 0.0);\n        float spec = pow(max(dot(reflect(-light, n), -rd), 0.0), 32.0);\n        col = vec3(0.6, 0.3, 0.2) * diff + vec3(1.0) * spec * 0.5;\n        col += vec3(0.05);\n    }\n    \n    col = pow(col, vec3(0.4545));\n    fragColor = TDOutputSwizzle(vec4(col, 1.0));\n}",
+    "uniforms": [
+      {"name": "uTime", "type": "float", "default": 0, "expression": "absTime.seconds", "description": "Animation time"}
+    ],
+    "inputs": [],
+    "tags": ["raymarching", "sdf", "3d", "sphere", "lighting"]
+  }
+}

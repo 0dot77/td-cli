@@ -114,6 +114,11 @@ func main() {
 			fatal(err)
 		}
 
+	case "shaders":
+		if err := runShaders(cmdArgs, jsonOutput, port, project, timeout); err != nil {
+			fatal(err)
+		}
+
 	default:
 		// Commands that need a TD connection
 		c, err := getClient(port, project, timeout)
@@ -194,6 +199,34 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 			return commands.ToolsList(c, jsonOutput)
 		}
 		return fmt.Errorf("unknown tools subcommand: %s (use list)", args[0])
+
+	case "network":
+		return runNetwork(c, args, jsonOutput)
+
+	case "describe":
+		path := "/"
+		if len(args) > 0 {
+			path = args[0]
+		}
+		return commands.Describe(c, path, jsonOutput)
+
+	case "diff":
+		return runDiff(c, args, jsonOutput)
+
+	case "watch":
+		path := "/"
+		interval := 1 * time.Second
+		for i := 0; i < len(args); i++ {
+			if args[i] == "--interval" && i+1 < len(args) {
+				if ms, err := strconv.Atoi(args[i+1]); err == nil {
+					interval = time.Duration(ms) * time.Millisecond
+				}
+				i++
+			} else {
+				path = args[i]
+			}
+		}
+		return commands.Watch(c, path, interval, jsonOutput)
 
 	default:
 		return fmt.Errorf("unknown command: %s\nRun 'td-cli help' for usage", command)
@@ -378,6 +411,92 @@ func runProject(c *client.Client, args []string, jsonOutput bool) error {
 	default:
 		return fmt.Errorf("unknown project subcommand: %s (use info, save)", args[0])
 	}
+}
+
+func runNetwork(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli network <export|import> [args]")
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "export":
+		path := "/"
+		outputFile := ""
+		depth := 10
+		includeDefaults := false
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "-o":
+				if i+1 < len(args) {
+					outputFile = args[i+1]
+					i++
+				}
+			case "--depth":
+				if i+1 < len(args) {
+					depth, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--include-defaults":
+				includeDefaults = true
+			default:
+				path = args[i]
+			}
+		}
+		return commands.NetworkExport(c, path, outputFile, depth, includeDefaults, jsonOutput)
+
+	case "import":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli network import <file> [target_path]")
+		}
+		filePath := args[0]
+		targetPath := "/"
+		if len(args) > 1 {
+			targetPath = args[1]
+		}
+		return commands.NetworkImport(c, filePath, targetPath, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown network subcommand: %s (use export, import)", sub)
+	}
+}
+
+func runDiff(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli diff <file1> <file2> | td-cli diff --live <snapshot> [path]")
+	}
+
+	// Check for --live mode
+	live := false
+	path := "/"
+	var fileArgs []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--live" {
+			live = true
+		} else if args[i] == "--path" && i+1 < len(args) {
+			path = args[i+1]
+			i++
+		} else {
+			fileArgs = append(fileArgs, args[i])
+		}
+	}
+
+	if live {
+		if len(fileArgs) < 1 {
+			return fmt.Errorf("usage: td-cli diff --live <snapshot.json> [path]")
+		}
+		if len(fileArgs) > 1 {
+			path = fileArgs[1]
+		}
+		return commands.DiffLive(c, fileArgs[0], path, jsonOutput)
+	}
+
+	if len(fileArgs) < 2 {
+		return fmt.Errorf("usage: td-cli diff <file1> <file2>")
+	}
+	return commands.DiffFiles(fileArgs[0], fileArgs[1], jsonOutput)
 }
 
 func runDocs(args []string, jsonOutput bool) error {
@@ -664,8 +783,17 @@ Commands:
   screenshot [path] [-o file]    Capture TOP as PNG
   project info                   Project metadata
   project save [path]            Save project
+  network export [path] [-o f]   Export network as JSON snapshot
+  network import <file> [path]   Import network from snapshot
+  describe [path]                AI-friendly network description
+  diff <file1> <file2>           Compare two network snapshots
+  diff --live <file> [path]      Compare snapshot vs live TD state
+  watch [path] [--interval ms]   Real-time performance monitor
   tools list                     Discover available tools (AI agent discovery)
-  docs <operator>                 Operator documentation
+  shaders list [--cat <cat>]     List shader templates
+  shaders get <name>             Show shader template details
+  shaders apply <name> <glsl>    Apply shader to GLSL TOP
+  docs <operator>                Operator documentation
   docs search <keyword>          Search operators
   docs api [class]               Python API reference
   init                           Generate CLAUDE.md
@@ -679,6 +807,46 @@ Global Flags:
   --timeout <ms>     Request timeout (default: 30000)
 `
 	fmt.Printf(usage, version)
+}
+
+func runShaders(args []string, jsonOutput bool, port int, project string, timeout time.Duration) error {
+	if len(args) == 0 {
+		return commands.ShadersList("", jsonOutput)
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "list":
+		category := ""
+		for i := 0; i < len(args); i++ {
+			if args[i] == "--cat" && i+1 < len(args) {
+				category = args[i+1]
+				i++
+			}
+		}
+		return commands.ShadersList(category, jsonOutput)
+
+	case "get":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli shaders get <name>")
+		}
+		return commands.ShadersGet(args[0], jsonOutput)
+
+	case "apply":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli shaders apply <name> <glsl_top_path>")
+		}
+		c, err := getClient(port, project, timeout)
+		if err != nil {
+			return err
+		}
+		return commands.ShadersApply(c, args[0], args[1], jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown shaders subcommand: %s (use list, get, apply)", sub)
+	}
 }
 
 func fatal(err error) {
