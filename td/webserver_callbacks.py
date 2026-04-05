@@ -10,7 +10,9 @@ from typing import Dict, Any
 
 # Serialize all command requests to prevent race conditions
 # when multiple CLI agents hit the same TD instance concurrently.
-_request_lock = threading.Lock()
+# RLock allows reentrant acquisition on the same thread to avoid deadlocks
+# if TD's Web Server DAT reenters during a long-running handler.
+_request_lock = threading.RLock()
 
 
 def onHTTPRequest(dat: 'webserverDAT', request: Dict[str, Any],

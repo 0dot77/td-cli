@@ -12,11 +12,12 @@ import os
 import json
 import hashlib
 import time
+import tempfile
 
 
 def _get_state():
     """Determine current TouchDesigner state.
-    Returns one of: ready, cooking, error, initializing, playing, paused."""
+    Returns one of: ready, cooking, error, initializing, playing, paused, unknown."""
     try:
         # Check for cook errors on the project root
         root = op('/')
@@ -41,18 +42,25 @@ def _get_state():
                 return 'cooking'
 
         return 'ready'
-    except Exception:
-        return 'ready'
+    except Exception as e:
+        debug(f'td-cli state detection error: {e}')
+        return 'unknown'
+
+
+def _hash_project(project_path):
+    """Generate a filename-safe hash from the project path."""
+    return hashlib.sha256(project_path.encode()).hexdigest()[:16]
 
 
 def _write_heartbeat():
-    """Write instance heartbeat file for CLI discovery."""
+    """Write instance heartbeat file for CLI discovery.
+    Uses atomic write (temp file + rename) to prevent partial reads."""
     home = os.path.expanduser('~')
     instances_dir = os.path.join(home, '.td-cli', 'instances')
     os.makedirs(instances_dir, exist_ok=True)
 
     project_path = project.folder
-    hash_id = hashlib.md5(project_path.encode()).hexdigest()[:12]
+    hash_id = _hash_project(project_path)
 
     server = op('webserver1')
     port = int(server.par.port) if server else 9500
@@ -69,8 +77,24 @@ def _write_heartbeat():
     }
 
     filepath = os.path.join(instances_dir, f'{hash_id}.json')
-    with open(filepath, 'w') as f:
-        json.dump(instance_data, f, indent=2)
+
+    # Atomic write: write to temp file then rename
+    fd, tmp_path = tempfile.mkstemp(dir=instances_dir, suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(instance_data, f, indent=2)
+        # On Windows, target must not exist for rename
+        if os.path.exists(filepath):
+            os.replace(tmp_path, filepath)
+        else:
+            os.rename(tmp_path, filepath)
+    except Exception:
+        # Clean up temp file on failure
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _cleanup_heartbeat():
@@ -78,7 +102,7 @@ def _cleanup_heartbeat():
     home = os.path.expanduser('~')
     instances_dir = os.path.join(home, '.td-cli', 'instances')
     project_path = project.folder
-    hash_id = hashlib.md5(project_path.encode()).hexdigest()[:12]
+    hash_id = _hash_project(project_path)
     filepath = os.path.join(instances_dir, f'{hash_id}.json')
     if os.path.exists(filepath):
         os.remove(filepath)

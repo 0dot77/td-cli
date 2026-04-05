@@ -27,7 +27,9 @@ func Status(c *client.Client, jsonOutput bool) error {
 
 	var health protocol.HealthData
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &health)
+		if err := json.Unmarshal(resp.Data, &health); err != nil {
+			return fmt.Errorf("failed to parse health data: %w", err)
+		}
 	}
 
 	fmt.Println("Connected to TouchDesigner")
