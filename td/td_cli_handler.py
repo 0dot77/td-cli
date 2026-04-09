@@ -70,6 +70,52 @@ def _validate_connector_index(connectors, index, label):
     return None
 
 
+def _snapshot_value(value):
+    """Convert a parameter value into a JSON-safe representation plus its type."""
+    if value is None:
+        return None, 'none'
+    if isinstance(value, bool):
+        return value, 'bool'
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value, 'int'
+    if isinstance(value, float):
+        return value, 'float'
+    if isinstance(value, str):
+        return value, 'str'
+    if isinstance(value, tuple):
+        return [_snapshot_value(v)[0] for v in value], 'tuple'
+    if isinstance(value, list):
+        return [_snapshot_value(v)[0] for v in value], 'list'
+    return str(value), type(value).__name__
+
+
+def _snapshot_values_equal(value, default):
+    """Compare values after JSON-safe normalization."""
+    return _snapshot_value(value)[0] == _snapshot_value(default)[0]
+
+
+def _restore_snapshot_value(pdata):
+    """Restore a snapshot value with backward compatibility for v1 snapshots."""
+    value_type = pdata.get('valueType')
+    value = pdata.get('value')
+
+    if not value_type:
+        return value
+    if value_type == 'tuple':
+        return tuple(value) if isinstance(value, list) else value
+    if value_type == 'list':
+        return list(value) if isinstance(value, (list, tuple)) else value
+    if value_type == 'bool':
+        return bool(value)
+    if value_type == 'int':
+        return int(value)
+    if value_type == 'float':
+        return float(value)
+    if value_type == 'none':
+        return None
+    return value
+
+
 # --- exec ---
 
 def handle_exec(body):
@@ -561,6 +607,7 @@ def _serialize_op(o, include_defaults=False):
         'comment': o.comment or '',
         'inputs': [],
         'parameters': {},
+        'parameterErrors': [],
     }
 
     # Input connections
@@ -581,17 +628,22 @@ def _serialize_op(o, include_defaults=False):
     # Parameters (non-default only unless include_defaults)
     for p in o.pars():
         try:
-            if include_defaults or str(p.val) != str(p.default):
+            has_expression = hasattr(p, 'expr') and bool(p.expr)
+            if include_defaults or has_expression or not _snapshot_values_equal(p.val, p.default):
+                value, value_type = _snapshot_value(p.val)
+                default, default_type = _snapshot_value(p.default)
                 par_data = {
-                    'value': str(p.val),
-                    'default': str(p.default),
+                    'value': value,
+                    'valueType': value_type,
+                    'default': default,
+                    'defaultType': default_type,
                     'mode': str(p.mode),
                 }
                 if hasattr(p, 'expr') and p.expr:
                     par_data['expression'] = p.expr
                 node['parameters'][p.name] = par_data
-        except Exception:
-            pass
+        except Exception as e:
+            node['parameterErrors'].append(f'{p.name}: {e}')
 
     return node
 
@@ -621,13 +673,14 @@ def handle_network_export(body):
     nodes = _walk_network(target, depth, include_defaults)
 
     snapshot = {
-        'version': 1,
+        'version': 2,
         'rootPath': path,
         'exportTime': absTime.seconds,
         'tdVersion': app.version,
         'tdBuild': app.build,
         'nodeCount': len(nodes),
         'nodes': nodes,
+        'warningCount': sum(len(n.get('parameterErrors', [])) for n in nodes),
     }
     return _success(f'Exported {len(nodes)} nodes', snapshot)
 
@@ -643,6 +696,9 @@ def handle_network_import(body):
         return _error(f'Target not found: {target_path}')
 
     created = []
+    create_failures = []
+    parameter_failures = []
+    connection_failures = []
     path_map = {}  # old path -> new op
     root_path = snapshot.get('rootPath', '/')
 
@@ -675,19 +731,33 @@ def handle_network_import(body):
             # Set non-default parameters
             for pname, pdata in node.get('parameters', {}).items():
                 p = getattr(new_op.par, pname, None)
-                if p is not None:
-                    try:
-                        if pdata.get('expression'):
-                            p.expr = pdata['expression']
-                        else:
-                            p.val = pdata['value']
-                    except Exception:
-                        pass
+                if p is None:
+                    parameter_failures.append({
+                        'path': new_op.path,
+                        'parameter': pname,
+                        'error': 'Parameter not found',
+                    })
+                    continue
+                try:
+                    if pdata.get('expression'):
+                        p.expr = pdata['expression']
+                    else:
+                        p.val = _restore_snapshot_value(pdata)
+                except Exception as e:
+                    parameter_failures.append({
+                        'path': new_op.path,
+                        'parameter': pname,
+                        'error': str(e),
+                    })
 
             created.append(new_op.path)
             path_map[node['path']] = new_op
         except Exception as e:
-            created.append(f'FAILED: {node.get("name", "?")} - {e}')
+            create_failures.append({
+                'path': node.get('path', ''),
+                'name': node.get('name', '?'),
+                'error': str(e),
+            })
 
     # Phase 2: Reconnect wires
     connections_made = 0
@@ -703,12 +773,23 @@ def handle_network_import(body):
                     dst_idx = inp.get('index', 0)
                     src_op.outputConnectors[src_idx].connect(new_dst.inputConnectors[dst_idx])
                     connections_made += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    connection_failures.append({
+                        'sourcePath': inp.get('sourcePath', ''),
+                        'targetPath': new_dst.path,
+                        'sourceIndex': src_idx,
+                        'targetIndex': dst_idx,
+                        'error': str(e),
+                    })
 
-    return _success(f'Imported {len(created)} nodes, {connections_made} connections', {
+    warning_count = len(create_failures) + len(parameter_failures) + len(connection_failures)
+    return _success(f'Imported {len(created)} nodes, {connections_made} connections ({warning_count} warning(s))', {
         'created': created,
         'connections': connections_made,
+        'createFailures': create_failures,
+        'parameterFailures': parameter_failures,
+        'connectionFailures': connection_failures,
+        'warningCount': warning_count,
     })
 
 
