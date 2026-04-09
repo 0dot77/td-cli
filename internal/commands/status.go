@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/td-cli/td-cli/internal/client"
 	"github.com/td-cli/td-cli/internal/protocol"
@@ -36,6 +37,12 @@ func Status(c *client.Client, jsonOutput bool) error {
 	fmt.Printf("  Project:    %s\n", health.Project)
 	fmt.Printf("  TD Version: %s (build %s)\n", health.TDVersion, health.TDBuild)
 	fmt.Printf("  Server:     %s v%s\n", "td-cli", health.Version)
+	if connectorLine := formatConnectorLine(health); connectorLine != "" {
+		fmt.Printf("  Connector:  %s\n", connectorLine)
+	}
+	if warning := compatibilityWarning(health); warning != "" {
+		fmt.Printf("  Warning:    %s\n", warning)
+	}
 	return nil
 }
 
@@ -58,7 +65,55 @@ func Instances(instances []protocol.Instance, jsonOutput bool) {
 		if state == "" {
 			state = "unknown"
 		}
-		fmt.Printf("  %-20s  %-12s  port:%-5d  pid:%-6d  %s\n",
-			inst.ProjectName, "["+state+"]", inst.Port, inst.PID, inst.ProjectPath)
+		connector := ""
+		if inst.ConnectorVersion != "" {
+			connector = fmt.Sprintf("  connector:%s", formatInstanceConnector(inst))
+		}
+		fmt.Printf("  %-20s  %-12s  port:%-5d  pid:%-6d  %s%s\n",
+			inst.ProjectName, "["+state+"]", inst.Port, inst.PID, inst.ProjectPath, connector)
 	}
+}
+
+func formatConnectorLine(health protocol.HealthData) string {
+	if health.ConnectorVersion == "" {
+		return ""
+	}
+
+	label := strings.TrimSpace(health.ConnectorName)
+	if label == "" {
+		label = "TDCliServer"
+	}
+
+	line := fmt.Sprintf("%s v%s", label, health.ConnectorVersion)
+	if mode := strings.TrimSpace(health.ConnectorInstallMode); mode != "" {
+		line += fmt.Sprintf(" (%s)", mode)
+	}
+
+	return line
+}
+
+func formatInstanceConnector(inst protocol.Instance) string {
+	label := strings.TrimSpace(inst.ConnectorName)
+	if label == "" {
+		label = "TDCliServer"
+	}
+
+	line := fmt.Sprintf("%s@%s", label, inst.ConnectorVersion)
+	if mode := strings.TrimSpace(inst.ConnectorInstallMode); mode != "" {
+		line += fmt.Sprintf(" (%s)", mode)
+	}
+
+	return line
+}
+
+func compatibilityWarning(health protocol.HealthData) string {
+	if health.ProtocolVersion == 0 || health.ProtocolVersion == protocol.CurrentProtocolVersion {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"CLI protocol v%d expects a matching connector, but this project reports protocol v%d. Update the TDCliServer TOX before using AI-driven edits.",
+		protocol.CurrentProtocolVersion,
+		health.ProtocolVersion,
+	)
 }

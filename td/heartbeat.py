@@ -15,6 +15,17 @@ import time
 import tempfile
 
 
+def _get_connector_metadata():
+    handler = op('handler')
+    module = getattr(handler, 'module', None) if handler else None
+    return {
+        'connectorName': getattr(module, 'CONNECTOR_NAME', 'TDCliServer'),
+        'connectorVersion': getattr(module, 'CONNECTOR_VERSION', '0.1.0'),
+        'protocolVersion': getattr(module, 'PROTOCOL_VERSION', 1),
+        'connectorInstallMode': getattr(module, 'CONNECTOR_INSTALL_MODE', 'tox'),
+    }
+
+
 def _get_state():
     """Determine current TouchDesigner state.
     Returns one of: ready, cooking, error, initializing, playing, paused, unknown."""
@@ -64,6 +75,7 @@ def _write_heartbeat():
 
     server = op('webserver1')
     port = int(server.par.port) if server else 9500
+    metadata = _get_connector_metadata()
 
     instance_data = {
         'projectPath': project_path,
@@ -74,6 +86,10 @@ def _write_heartbeat():
         'tdVersion': app.version,
         'tdBuild': app.build,
         'state': _get_state(),
+        'connectorName': metadata['connectorName'],
+        'connectorVersion': metadata['connectorVersion'],
+        'protocolVersion': metadata['protocolVersion'],
+        'connectorInstallMode': metadata['connectorInstallMode'],
     }
 
     filepath = os.path.join(instances_dir, f'{hash_id}.json')

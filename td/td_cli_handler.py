@@ -11,6 +11,11 @@ import tempfile
 import hashlib
 import traceback
 
+CONNECTOR_NAME = 'TDCliServer'
+CONNECTOR_VERSION = '0.1.0'
+PROTOCOL_VERSION = 1
+CONNECTOR_INSTALL_MODE = 'tox'
+
 
 def handle_request(uri, body):
     """Route request to appropriate handler based on URI."""

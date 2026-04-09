@@ -21,6 +21,17 @@ def _get_required_token() -> str:
     return os.environ.get('TD_CLI_TOKEN', '').strip()
 
 
+def _get_connector_metadata() -> Dict[str, Any]:
+    handler = op('handler')
+    module = getattr(handler, 'module', None) if handler else None
+    return {
+        'connectorName': getattr(module, 'CONNECTOR_NAME', 'TDCliServer'),
+        'connectorVersion': getattr(module, 'CONNECTOR_VERSION', '0.1.0'),
+        'protocolVersion': getattr(module, 'PROTOCOL_VERSION', 1),
+        'connectorInstallMode': getattr(module, 'CONNECTOR_INSTALL_MODE', 'tox'),
+    }
+
+
 def _normalize_headers(headers: Any) -> Dict[str, str]:
     if not isinstance(headers, dict):
         return {}
@@ -77,6 +88,7 @@ def onHTTPRequest(dat: 'webserverDAT', request: Dict[str, Any],
     with _request_lock:
         try:
             if method == 'GET' and uri == '/health':
+                metadata = _get_connector_metadata()
                 result = {
                     'success': True,
                     'message': 'td-cli server running',
@@ -85,6 +97,10 @@ def onHTTPRequest(dat: 'webserverDAT', request: Dict[str, Any],
                         'project': project.name,
                         'tdVersion': app.version,
                         'tdBuild': app.build,
+                        'connectorName': metadata['connectorName'],
+                        'connectorVersion': metadata['connectorVersion'],
+                        'protocolVersion': metadata['protocolVersion'],
+                        'connectorInstallMode': metadata['connectorInstallMode'],
                     }
                 }
                 response['statusCode'] = 200

@@ -787,33 +787,17 @@ td-cli project info
 td-cli project save
 ` + "```" + `
 
-### Live Code Editing
+### Connector Boundary
 
-The td-cli server runs inside TouchDesigner as Python scripts in Text DATs.
-You can **read and modify these scripts live** using ` + "`dat read`" + ` and ` + "`dat write`" + `:
+Treat ` + "`TDCliServer`" + ` as an installed connector, not as normal project code.
+For day-to-day AI or artist workflows:
 
-` + "```" + `bash
-# Read the server handler code
-td-cli dat read /project1/TDCliServer/handler
+- install or drag-drop ` + "`tox/TDCliServer.tox`" + ` into the project
+- keep the component named ` + "`TDCliServer`" + `
+- use ` + "`td-cli`" + ` commands to inspect and modify the rest of the project
+- do **not** rewrite ` + "`/project1/TDCliServer/*`" + ` unless you are explicitly developing the connector itself
 
-# Update handler with a local file
-td-cli dat write /project1/TDCliServer/handler -f td/td_cli_handler.py
-
-# Read/update the webserver callbacks
-td-cli dat read /project1/TDCliServer/webserver1_callbacks
-td-cli dat write /project1/TDCliServer/webserver1_callbacks -f td/webserver_callbacks.py
-
-# Read/update the heartbeat script
-td-cli dat read /project1/TDCliServer/chopexec1
-td-cli dat write /project1/TDCliServer/chopexec1 -f td/heartbeat.py
-` + "```" + `
-
-This means you can iterate on the server-side Python code without
-manually editing inside TouchDesigner. Write the code locally, then
-push it to TD with ` + "`dat write -f`" + `.
-
-Any Text DAT or Script DAT in the project can be modified this way,
-making it possible to develop TD Python scripts entirely from the terminal.
+The connector is the runtime bridge. Your working surface is the CLI.
 
 ### Offline Documentation (629 operators + 69 Python API classes)
 
@@ -875,11 +859,11 @@ sphereSOP, boxSOP, gridSOP, noiseSOP, nullSOP
 	if err := os.WriteFile("CLAUDE.md", []byte(claudeMD), 0644); err != nil {
 		fatal(fmt.Errorf("failed to write CLAUDE.md: %w", err))
 	}
-	fmt.Println("Created CLAUDE.md for Claude Code integration")
+	fmt.Println("Created CLAUDE.md with td-cli agent guidance")
 }
 
 func printUsage() {
-	usage := `td-cli v%s — TouchDesigner CLI for Claude Code
+	usage := `td-cli v%s — TouchDesigner CLI for agents and artists
 
 Usage: td-cli [flags] <command> [args]
 

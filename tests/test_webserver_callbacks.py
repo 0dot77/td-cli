@@ -17,6 +17,11 @@ def load_callbacks_module():
 
 
 class FakeHandlerModule:
+    CONNECTOR_NAME = "TDCliServer"
+    CONNECTOR_VERSION = "0.1.0"
+    PROTOCOL_VERSION = 1
+    CONNECTOR_INSTALL_MODE = "tox"
+
     def __init__(self):
         self.calls = []
 
@@ -35,6 +40,8 @@ class WebserverCallbackTests(unittest.TestCase):
         self.module = load_callbacks_module()
         self.handler_module = FakeHandlerModule()
         self.module.op = lambda path: FakeHandlerDAT(self.handler_module) if path == "handler" else None
+        self.module.project = type("Project", (), {"name": "TestProject"})()
+        self.module.app = type("App", (), {"version": "2023.1", "build": "12340"})()
 
     def test_rejects_missing_token_when_configured(self):
         request = {"uri": "/tools/list", "method": "POST", "data": "{}"}
@@ -75,3 +82,16 @@ class WebserverCallbackTests(unittest.TestCase):
 
         self.assertEqual(result["statusCode"], 200)
         self.assertEqual(self.handler_module.calls, [("/tools/list", {})])
+
+    def test_health_reports_connector_metadata(self):
+        request = {"uri": "/health", "method": "GET"}
+        response = {}
+
+        result = self.module.onHTTPRequest(None, request, response)
+
+        self.assertEqual(result["statusCode"], 200)
+        payload = self.module.json.loads(result["data"])
+        self.assertEqual(payload["data"]["connectorName"], "TDCliServer")
+        self.assertEqual(payload["data"]["connectorVersion"], "0.1.0")
+        self.assertEqual(payload["data"]["protocolVersion"], 1)
+        self.assertEqual(payload["data"]["connectorInstallMode"], "tox")

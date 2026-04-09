@@ -1,58 +1,120 @@
 # td-cli
 
-[English](#english) | [한국어](#한국어)
+TouchDesigner CLI for LLM agents, artists, and terminal-driven workflows.
+
+`td-cli` connects a live TouchDesigner project to the terminal. It is useful in two modes at the same time:
+
+- as a command surface for LLM agents such as Codex or Claude
+- as a practical live-control tool for artists who want to inspect, build, and tweak TouchDesigner projects without clicking through every network manually
 
 ## English
 
-TouchDesigner CLI for LLM agents and terminal-driven workflows.
+`td-cli` is an execution layer for a running TouchDesigner session. It can inspect operators, change parameters, read and write DATs, export snapshots, apply shader templates, and execute Python inside TouchDesigner.
 
-`td-cli` lets you control a live TouchDesigner project from the terminal with commands such as `status`, `ops`, `par`, `dat`, and `exec`.
+### What This Is Good For
 
-### What This Does
-
-- Connect to a running TouchDesigner project over HTTP
-- Discover running TD instances automatically
-- Inspect and edit operators, parameters, DATs, and networks
-- Generate starter guidance for agent-assisted workflows
+- inspect a live TD scene from the terminal
+- build or patch operators without hunting through the network editor
+- iterate on Python DATs and GLSL shaders from local files
+- automate repetitive setup tasks with an LLM or shell scripts
+- give artists a recoverable workflow with backups and audit logs
 
 ### How It Works
 
 ```text
-LLM Agent / Terminal
-        |
-        v
+Artist / LLM / Terminal
+          |
+          v
 td-cli (Go binary)
-        |
-        v
+          |
+          v
 HTTP on port 9500
-        |
-        v
+          |
+          v
 TouchDesigner Web Server DAT + Python handler
 ```
 
-The TouchDesigner side writes heartbeat files to `~/.td-cli/instances/`, and `td-cli` uses those files to auto-discover active projects.
+The TouchDesigner side writes heartbeat files to `~/.td-cli/instances/`, and `td-cli` uses those files to auto-discover running projects.
 
-In an agent workflow, the LLM is the reasoning layer and `td-cli` is the execution layer. The model decides what to inspect or change, and `td-cli` performs the concrete operations against a live TouchDesigner session.
+In an agent workflow, the model is the reasoning layer and `td-cli` is the execution layer.
 
 Security note: if you set `TD_CLI_TOKEN` in both the shell running `td-cli` and the TouchDesigner process environment before launch, the server will require that shared token on every HTTP request.
+
+### Artist Workflow
+
+Think of `td-cli` as a live studio assistant for TouchDesigner:
+
+1. Find the running project.
+2. Inspect the current network or parameters.
+3. Create or patch operators.
+4. Make the result visible in a container, window, or screenshot.
+5. Iterate quickly, and fall back with backups if needed.
+
+Typical live workflow:
+
+```powershell
+td-cli status
+td-cli ops list /project1 --depth 2
+td-cli ops create noiseTOP /project1 --name myNoise
+td-cli par get /project1/myNoise
+td-cli par set /project1/myNoise period 4 amp 0.35
+td-cli screenshot /project1/myNoise -o noise.png
+```
+
+### Visual Output Workflow
+
+Creating a TOP or GLSL network is only part of the job. You still need to route it somewhere visible.
+
+Common options:
+
+- assign the result to a container's `Background TOP`
+- point a viewer or window at a COMP
+- save the result with `td-cli screenshot`
+
+Example:
+
+```powershell
+td-cli par set /project1/myContainer top ./out1
+td-cli screenshot /project1/myContainer/out1 -o frame.png
+```
+
+Important: for OP-reference parameters such as `top`, `opviewer`, `pixeldat`, `component`, or `winop`, prefer local relative paths like `./out1`. The handler will normalize resolvable local targets to relative references.
+
+### Shader Workflow
+
+For artists, shaders usually follow this loop:
+
+1. inspect available templates
+2. read a template before using it
+3. apply it to a GLSL TOP
+4. tweak DAT content or parameters live
+5. route the output to a visible TOP or COMP
+
+```powershell
+td-cli shaders list
+td-cli shaders get plasma
+td-cli shaders apply plasma /project1/glsl1
+td-cli dat read /project1/glsl1_pixel
+td-cli screenshot /project1/glsl1 -o glsl.png
+```
 
 ### Beginner Install Guide
 
 #### 1. Prerequisites
 
-- TouchDesigner installed and able to open a project
-- Windows terminal such as PowerShell
-- One of:
-  - the prebuilt `td-cli.exe` from GitHub Releases
-  - Go `1.26.1` or newer if you want to build/install from source
+- TouchDesigner installed and able to open projects
+- a terminal such as PowerShell on Windows
+- one of the following:
+  - prebuilt `td-cli.exe` from GitHub Releases
+  - Go `1.26.1` or newer if building from source
 
 #### 2. Install the CLI
 
-Option A: Download a release binary
+Option A: download a release binary
 
 1. Download `td-cli.exe` from [Releases](https://github.com/td-cli/td-cli/releases).
-2. Put the file somewhere easy to find, for example `C:\Tools\td-cli\td-cli.exe`.
-3. Either run it with the full path, or add that folder to your `PATH`.
+2. Put it somewhere easy to find, for example `C:\Tools\td-cli\td-cli.exe`.
+3. Either run it by full path or add that folder to `PATH`.
 
 Example:
 
@@ -60,40 +122,42 @@ Example:
 C:\Tools\td-cli\td-cli.exe version
 ```
 
-Option B: Install with Go
+Option B: install with Go
 
 ```powershell
 go install github.com/td-cli/td-cli/cmd/td-cli@latest
 ```
 
-If Go is configured correctly, the binary will usually be installed into your Go bin directory.
-
-If you want to build from this repository directly:
+To build this repository directly:
 
 ```powershell
 go build -o td-cli.exe ./cmd/td-cli/
 ```
 
-#### 3. Set Up TouchDesigner Server
+#### 3. Install the TouchDesigner Connector
 
-You must add the `TDCliServer` component to your TouchDesigner project before `td-cli` can connect.
+You must add the `TDCliServer` connector to your TouchDesigner project before `td-cli` can connect.
 
 Recommended setup:
 
-1. Open your project in TouchDesigner.
-2. Import [`tox/TDCliServer.tox`](tox/TDCliServer.tox) into the root network, or drag it into the project.
+1. Open your TouchDesigner project.
+2. Drag-and-drop [`tox/TDCliServer.tox`](tox/TDCliServer.tox) into the root network, or import it from TouchDesigner.
 3. Make sure the imported component is named `TDCliServer`.
-4. Open the component and verify that `webserver1` is active on port `9500`.
+4. Open it and verify that `webserver1` is active on port `9500`.
 
-That `.tox` already contains the required operators and scripts, so this is the fastest way to get started.
+Normal usage boundary:
 
-Manual setup is still possible if you want to build it yourself. The Python source files used by the component are:
+- treat `TDCliServer` as an installed runtime connector
+- use `td-cli` commands to inspect and modify the rest of the project
+- avoid editing `/project1/TDCliServer/*` during normal AI or artist workflows
+
+Developer-only reference files for connector work:
 
 - [`td/webserver_callbacks.py`](td/webserver_callbacks.py)
 - [`td/td_cli_handler.py`](td/td_cli_handler.py)
 - [`td/heartbeat.py`](td/heartbeat.py)
 
-Detailed setup notes are also available in [`td/setup_instructions.md`](td/setup_instructions.md).
+Detailed setup notes are also in [`td/setup_instructions.md`](td/setup_instructions.md).
 
 #### 4. Verify the Connection
 
@@ -108,9 +172,10 @@ Connected to TouchDesigner
   Project:    ...
   TD Version: ...
   Server:     td-cli v...
+  Connector:  TDCliServer v...
 ```
 
-If you have more than one TouchDesigner project open:
+If multiple TouchDesigner projects are open:
 
 ```powershell
 td-cli instances
@@ -124,9 +189,11 @@ td-cli --project "C:\path\to\your\project.toe" status
 td-cli init
 ```
 
-This currently creates a `CLAUDE.md` file in the current folder with command examples and usage notes. The CLI itself is not Claude-specific: Codex and other agents can use the same commands directly, or adapt the generated guidance into their own project-instruction format such as `AGENTS.md`.
+This creates a `CLAUDE.md` file with command examples and usage notes. The CLI itself is not Claude-specific; Codex and other agents can use the same commands directly, or adapt the generated guidance into `AGENTS.md` or another instruction format.
 
-### First Commands to Try
+The generated guidance tells agents to treat `TDCliServer` as the installed connector boundary and to use `td-cli` as the main execution surface.
+
+### First Commands To Try
 
 ```powershell
 td-cli status
@@ -142,7 +209,7 @@ td-cli exec "print(op('/project1').children)"
 ### Main Commands
 
 | Command | Description |
-|---------|-------------|
+|------|------|
 | `td-cli status` | Check TD connection |
 | `td-cli instances` | List running TD instances |
 | `td-cli exec "<code>"` | Execute Python in TD |
@@ -151,60 +218,69 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli ops create <type> <parent>` | Create an operator |
 | `td-cli ops delete <path>` | Delete an operator |
 | `td-cli ops info <path>` | Show operator details |
-| `td-cli par get <op> [names]` | Get parameter values |
+| `td-cli par get <op> [names]` | Read parameter values |
 | `td-cli par set <op> <name> <value>` | Set one or more parameters |
 | `td-cli connect <src> <dst>` | Connect operators |
 | `td-cli disconnect <src> <dst>` | Disconnect operators |
-| `td-cli dat read <path>` | Read DAT contents |
-| `td-cli dat write <path> <content>` | Write DAT contents |
+| `td-cli dat read <path>` | Read DAT content |
+| `td-cli dat write <path> <content>` | Write DAT content |
 | `td-cli screenshot [path] -o file.png` | Save TOP output as PNG |
 | `td-cli project info` | Show project metadata |
-| `td-cli project save [path]` | Save the current project |
+| `td-cli project save [path]` | Save the project |
 | `td-cli backup list [--limit N]` | List recent backup artifacts |
-| `td-cli backup restore <backup-id>` | Restore a previous backup artifact |
+| `td-cli backup restore <backup-id>` | Restore a previous backup |
 | `td-cli logs list [--limit N]` | List recent audit log events |
 | `td-cli logs tail [--limit N]` | Read recent audit log events |
 | `td-cli tox export <comp> -o file.tox` | Export a COMP as `.tox` |
 | `td-cli tox import <file.tox> [parent]` | Import a `.tox` file |
 | `td-cli network export [path] [-o file]` | Export a network snapshot |
 | `td-cli network import <file> [path]` | Import a network snapshot |
-| `td-cli describe [path]` | Produce an AI-friendly network summary |
+| `td-cli describe [path]` | Generate an AI-friendly network summary |
 | `td-cli diff <file1> <file2>` | Compare two snapshots |
-| `td-cli diff --live <file> [path]` | Compare a snapshot against live TD |
-| `td-cli watch [path] [--interval ms]` | Monitor a network in real time |
-| `td-cli docs` | Browse built-in offline docs |
-| `td-cli docs <operator>` | Lookup an operator |
-| `td-cli docs api [class]` | Lookup Python API docs |
+| `td-cli diff --live <file> [path]` | Compare a snapshot against live TD state |
+| `td-cli watch [path] [--interval ms]` | Monitor live performance |
+| `td-cli tools list` | List available tool routes for agent discovery |
 | `td-cli shaders list` | List shader templates |
+| `td-cli shaders get <name>` | Show shader template details |
 | `td-cli shaders apply <name> <glsl_top_path>` | Apply a shader template |
+| `td-cli docs` | Browse offline docs |
+| `td-cli docs <operator>` | Look up an operator |
+| `td-cli docs api [class]` | Read Python API docs |
 | `td-cli update` | Self-update from GitHub Releases |
 | `td-cli version` | Show version |
 
 ### Global Flags
 
 - `--port <N>`: connect to a specific port
-- `--project <path>`: target a specific `.toe` project path
-- `--json`: print raw JSON output
+- `--project <path>`: target a specific `.toe` project
+- `--json`: output raw JSON
 - `--timeout <ms>`: change request timeout, default `30000`
 
 ### Troubleshooting
 
-`td-cli status` says no running TouchDesigner instances:
+If `td-cli status` reports no running TouchDesigner instances:
 
-- Make sure the TouchDesigner project is open
-- Make sure `webserver1` is active on port `9500`
-- Make sure the heartbeat callback is running every second
-- Check whether `~/.td-cli/instances/` is being updated
+- confirm the TouchDesigner project is actually open
+- confirm `webserver1` is active on port `9500`
+- confirm the heartbeat callback is running
+- confirm `~/.td-cli/instances/` is being updated
+- if `status` shows a connector protocol warning, replace the project connector with the current `TDCliServer.tox`
 
-More than one project is running:
+If multiple projects are running:
 
-- Use `td-cli instances`
-- Then choose one with `--port` or `--project`
+- check the list with `td-cli instances`
+- then target the right one with `--port` or `--project`
 
-Command not found:
+If a visual result exists but you still do not see it:
 
-- If you downloaded `td-cli.exe`, run it with the full path first
-- If that works, add its folder to `PATH`
+- route the output to a visible `Background TOP`, viewer, or window
+- use `td-cli screenshot` to verify that the TOP is actually rendering
+- check OP-reference parameters and prefer relative paths like `./out1`
+
+If the command is not found:
+
+- try the full path to `td-cli.exe`
+- if that works, add its folder to `PATH`
 
 ### Development
 
@@ -222,37 +298,94 @@ td-cli help
 
 ## 한국어
 
-LLM 에이전트와 터미널 기반 워크플로를 위한 TouchDesigner CLI입니다.
-
-`td-cli`는 TouchDesigner 프로젝트를 터미널에서 제어할 수 있게 해주는 도구입니다. `status`, `ops`, `par`, `dat`, `exec` 같은 명령으로 TouchDesigner를 다룰 수 있습니다.
+`td-cli`는 실행 중인 TouchDesigner 세션을 터미널에서 제어하는 실행 레이어입니다. 오퍼레이터 조회, 파라미터 수정, DAT 읽기/쓰기, 네트워크 스냅샷, 셰이더 템플릿 적용, TouchDesigner 내부 Python 실행까지 다룰 수 있습니다.
 
 ### 이 프로젝트로 할 수 있는 것
 
-- 실행 중인 TouchDesigner 프로젝트에 HTTP로 연결합니다
-- 실행 중인 TD 인스턴스를 자동으로 찾습니다
-- 오퍼레이터, 파라미터, DAT, 네트워크를 조회하고 수정할 수 있습니다
-- 에이전트 보조 워크플로를 위한 시작 가이드를 생성합니다
+- 실행 중인 TouchDesigner 프로젝트를 터미널에서 직접 다루기
+- 네트워크를 뒤지지 않고 필요한 오퍼레이터와 파라미터를 바로 조회하기
+- 로컬 파일에서 Python DAT나 GLSL 셰이더를 빠르게 반복 수정하기
+- LLM이나 스크립트로 반복 작업 자동화하기
+- 백업과 감사 로그를 기반으로 더 안전하게 라이브 수정하기
 
 ### 동작 방식
 
 ```text
-LLM Agent / Terminal
-        |
-        v
+작가 / LLM / Terminal
+         |
+         v
 td-cli (Go binary)
-        |
-        v
+         |
+         v
 HTTP on port 9500
-        |
-        v
+         |
+         v
 TouchDesigner Web Server DAT + Python handler
 ```
 
 TouchDesigner 쪽은 `~/.td-cli/instances/` 경로에 heartbeat 파일을 기록하고, `td-cli`는 그 파일을 읽어서 현재 실행 중인 프로젝트를 자동 탐지합니다.
 
-에이전트 워크플로에서 LLM은 추론 레이어이고 `td-cli`는 실행 레이어입니다. 모델이 무엇을 조회하거나 수정할지 판단하고, `td-cli`가 그 결정을 실제 TouchDesigner 세션에 반영합니다.
+에이전트 워크플로에서 LLM은 추론 레이어이고 `td-cli`는 실행 레이어입니다.
 
 보안 참고: `td-cli`를 실행하는 셸과 TouchDesigner 프로세스를 실행하기 전 환경에 동일한 `TD_CLI_TOKEN` 값을 설정하면, 서버가 모든 HTTP 요청에 대해 해당 공유 토큰을 요구합니다.
+
+### 작가 워크플로
+
+작가 입장에서는 `td-cli`를 라이브 스튜디오 어시스턴트처럼 생각하면 됩니다.
+
+1. 지금 열려 있는 프로젝트를 찾고
+2. 현재 네트워크나 파라미터를 읽고
+3. 필요한 오퍼레이터를 만들거나 수정하고
+4. 결과를 보이게 연결하고
+5. 백업과 로그를 남기면서 반복합니다
+
+기본적인 라이브 작업 흐름:
+
+```powershell
+td-cli status
+td-cli ops list /project1 --depth 2
+td-cli ops create noiseTOP /project1 --name myNoise
+td-cli par get /project1/myNoise
+td-cli par set /project1/myNoise period 4 amp 0.35
+td-cli screenshot /project1/myNoise -o noise.png
+```
+
+### 화면에 보이게 만드는 워크플로
+
+TOP이나 GLSL 네트워크를 만들었다고 끝이 아닙니다. 실제로는 그 결과를 어디엔가 보이게 연결해야 합니다.
+
+보통은 아래 셋 중 하나입니다.
+
+- 컨테이너의 `Background TOP`으로 연결
+- viewer나 window가 볼 COMP를 지정
+- `td-cli screenshot`으로 렌더 결과를 바로 확인
+
+예시:
+
+```powershell
+td-cli par set /project1/myContainer top ./out1
+td-cli screenshot /project1/myContainer/out1 -o frame.png
+```
+
+중요: `top`, `opviewer`, `pixeldat`, `component`, `winop` 같은 OP reference 파라미터에는 `./out1` 같은 상대 경로를 권장합니다. 현재 핸들러는 로컬에서 해석 가능한 대상이면 상대 경로로 정규화합니다.
+
+### 셰이더 워크플로
+
+작가용 셰이더 작업은 보통 아래 순서로 갑니다.
+
+1. 어떤 템플릿이 있는지 보고
+2. 적용 전에 내용을 읽고
+3. GLSL TOP에 올리고
+4. DAT나 파라미터를 라이브로 수정하고
+5. 결과를 화면이나 스크린샷으로 확인합니다
+
+```powershell
+td-cli shaders list
+td-cli shaders get plasma
+td-cli shaders apply plasma /project1/glsl1
+td-cli dat read /project1/glsl1_pixel
+td-cli screenshot /project1/glsl1 -o glsl.png
+```
 
 ### 초심자용 설치 가이드
 
@@ -286,28 +419,30 @@ C:\Tools\td-cli\td-cli.exe version
 go install github.com/td-cli/td-cli/cmd/td-cli@latest
 ```
 
-Go 환경 설정이 정상이라면 보통 Go bin 디렉터리에 실행 파일이 설치됩니다.
-
 이 저장소를 직접 빌드하려면:
 
 ```powershell
 go build -o td-cli.exe ./cmd/td-cli/
 ```
 
-#### 3. TouchDesigner 서버 설정
+#### 3. TouchDesigner 커넥터 설치
 
-`td-cli`가 연결되려면 먼저 TouchDesigner 프로젝트 안에 `TDCliServer` 컴포넌트를 넣어야 합니다.
+`td-cli`가 연결되려면 먼저 TouchDesigner 프로젝트 안에 `TDCliServer` 커넥터를 넣어야 합니다.
 
 권장 방법:
 
 1. TouchDesigner에서 프로젝트를 엽니다.
-2. [`tox/TDCliServer.tox`](tox/TDCliServer.tox)를 루트 네트워크로 import 하거나 프로젝트에 드래그해서 넣습니다.
+2. [`tox/TDCliServer.tox`](tox/TDCliServer.tox)를 루트 네트워크에 드래그앤드롭하거나 import 합니다.
 3. 가져온 컴포넌트 이름이 `TDCliServer`인지 확인합니다.
 4. 컴포넌트 안으로 들어가서 `webserver1`이 포트 `9500`에서 활성화되어 있는지 확인합니다.
 
-이 `.tox` 파일 안에는 필요한 오퍼레이터와 스크립트가 이미 들어 있으므로, 가장 빠른 셋업 방법입니다.
+일반 사용 경계:
 
-직접 수동 구성하고 싶다면 아래 Python 소스 파일을 참고하면 됩니다.
+- `TDCliServer`는 설치된 런타임 커넥터로 취급합니다
+- 실제 작업은 `td-cli` 명령으로 프로젝트 나머지 부분에 대해 수행합니다
+- 일반적인 AI/작업 워크플로에서는 `/project1/TDCliServer/*`를 직접 수정하지 않습니다
+
+커넥터 개발용 참고 파일:
 
 - [`td/webserver_callbacks.py`](td/webserver_callbacks.py)
 - [`td/td_cli_handler.py`](td/td_cli_handler.py)
@@ -328,9 +463,10 @@ Connected to TouchDesigner
   Project:    ...
   TD Version: ...
   Server:     td-cli v...
+  Connector:  TDCliServer v...
 ```
 
-TouchDesigner 프로젝트를 여러 개 열어 둔 경우에는 명시적으로 지정해야 합니다:
+TouchDesigner 프로젝트를 여러 개 열어 둔 경우:
 
 ```powershell
 td-cli instances
@@ -344,7 +480,9 @@ td-cli --project "C:\path\to\your\project.toe" status
 td-cli init
 ```
 
-이 명령은 현재 폴더에 `CLAUDE.md`를 만들고, 명령 예시와 사용법을 기록합니다. 현재 출력 파일 이름은 Claude 스타일이지만, CLI 자체는 Claude 전용이 아닙니다. Codex 같은 다른 에이전트도 같은 명령을 직접 사용할 수 있고, 필요하면 내용을 `AGENTS.md` 같은 형식으로 옮겨서 사용할 수 있습니다.
+이 명령은 현재 폴더에 `CLAUDE.md`를 만들고, 명령 예시와 사용법을 기록합니다. CLI 자체는 Claude 전용이 아니고, Codex 같은 다른 에이전트도 같은 명령을 그대로 사용할 수 있습니다. 필요하면 생성된 내용을 `AGENTS.md` 같은 형식으로 옮겨도 됩니다.
+
+생성되는 가이드는 `TDCliServer`를 설치된 커넥터 경계로 보고, 실제 작업 표면은 `td-cli` 명령으로 유지하도록 안내합니다.
 
 ### 처음 해볼 명령
 
@@ -372,7 +510,7 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli ops delete <path>` | 오퍼레이터 삭제 |
 | `td-cli ops info <path>` | 오퍼레이터 상세 정보 |
 | `td-cli par get <op> [names]` | 파라미터 값 조회 |
-| `td-cli par set <op> <name> <value>` | 파라미터 값 설정 |
+| `td-cli par set <op> <name> <value>` | 하나 이상의 파라미터 값 설정 |
 | `td-cli connect <src> <dst>` | 오퍼레이터 연결 |
 | `td-cli disconnect <src> <dst>` | 오퍼레이터 연결 해제 |
 | `td-cli dat read <path>` | DAT 내용 읽기 |
@@ -392,11 +530,13 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli diff <file1> <file2>` | 두 스냅샷 비교 |
 | `td-cli diff --live <file> [path]` | 스냅샷과 현재 TD 상태 비교 |
 | `td-cli watch [path] [--interval ms]` | 실시간 모니터링 |
+| `td-cli tools list` | 에이전트 검색용 tool route 목록 |
+| `td-cli shaders list` | 셰이더 템플릿 목록 |
+| `td-cli shaders get <name>` | 셰이더 템플릿 상세 보기 |
+| `td-cli shaders apply <name> <glsl_top_path>` | 셰이더 템플릿 적용 |
 | `td-cli docs` | 내장 오프라인 문서 보기 |
 | `td-cli docs <operator>` | 오퍼레이터 문서 조회 |
 | `td-cli docs api [class]` | Python API 문서 조회 |
-| `td-cli shaders list` | 셰이더 템플릿 목록 |
-| `td-cli shaders apply <name> <glsl_top_path>` | 셰이더 템플릿 적용 |
 | `td-cli update` | GitHub Releases에서 자체 업데이트 |
 | `td-cli version` | 버전 표시 |
 
@@ -413,13 +553,20 @@ td-cli exec "print(op('/project1').children)"
 
 - TouchDesigner 프로젝트가 실제로 열려 있는지 확인하세요
 - `webserver1`이 포트 `9500`에서 활성화되어 있는지 확인하세요
-- heartbeat 콜백이 1초마다 실행되는지 확인하세요
+- heartbeat 콜백이 실제로 실행되는지 확인하세요
 - `~/.td-cli/instances/` 경로가 실제로 갱신되는지 확인하세요
+- `status`에 커넥터 프로토콜 경고가 보이면 프로젝트의 `TDCliServer.tox`를 현재 버전으로 교체하세요
 
 프로젝트가 여러 개 실행 중인 경우:
 
 - `td-cli instances`로 목록을 확인하세요
 - 그 다음 `--port` 또는 `--project`로 원하는 프로젝트를 지정하세요
+
+결과가 존재하는데 화면에 안 보이는 경우:
+
+- 출력 TOP을 `Background TOP`, viewer, window 중 하나에 연결했는지 확인하세요
+- `td-cli screenshot`으로 실제 렌더 여부를 먼저 확인하세요
+- OP reference 파라미터는 `./out1` 같은 상대 경로를 우선 사용하세요
 
 명령을 찾을 수 없다고 나오는 경우:
 
