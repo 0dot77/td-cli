@@ -382,6 +382,19 @@ class TDCliHandlerTests(unittest.TestCase):
         self.assertEqual(tailed["data"]["events"][0]["requestId"], first["data"]["requestId"])
         self.assertEqual(tailed["data"]["events"][1]["requestId"], second["data"]["requestId"])
 
+    def test_handle_request_routes_logs_endpoints(self):
+        dat = FakeDAT(text="before")
+        self.module.op = {"/project1/text1": dat}.get
+        self.module.handle_request("/dat/write", {"path": "/project1/text1", "content": "one"})
+
+        listed = self.module.handle_request("/logs/list", {"limit": 5})
+        tailed = self.module.handle_request("/logs/tail", {"limit": 5})
+
+        self.assertTrue(listed["success"])
+        self.assertTrue(tailed["success"])
+        self.assertEqual(listed["data"]["events"][0]["route"], "/dat/write")
+        self.assertEqual(tailed["data"]["events"][0]["route"], "/dat/write")
+
     def _read_backup_payload(self, backup_path):
         with open(backup_path, "r", encoding="utf-8") as handle:
             backup_record = json.load(handle)

@@ -33,6 +33,8 @@ def handle_request(uri, body):
         '/network/import': handle_network_import,
         '/backup/list': handle_backup_list,
         '/backup/restore': handle_backup_restore,
+        '/logs/list': handle_logs_list,
+        '/logs/tail': handle_logs_tail,
         '/network/describe': handle_network_describe,
         '/monitor': handle_monitor,
         '/shaders/apply': handle_shaders_apply,
