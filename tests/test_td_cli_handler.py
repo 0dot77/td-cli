@@ -38,13 +38,14 @@ class FakePage:
 
 
 class FakeParam:
-    def __init__(self, name, value, default=None, mode="CONSTANT", expr=""):
+    def __init__(self, name, value, default=None, mode="CONSTANT", expr="", style=""):
         self.name = name
         self.label = name
         self._val = value
         self.default = value if default is None else default
         self.mode = mode
         self.expr = expr
+        self.style = style
         self.page = FakePage("Test")
 
     @property
@@ -125,6 +126,29 @@ class FakeOp:
 
     def parent(self):
         return self._parent
+
+    def relativePath(self, other):
+        if other is self:
+            return "."
+
+        owner_parts = [part for part in self.path.split("/") if part]
+        target_parts = [part for part in other.path.split("/") if part]
+
+        common = 0
+        for owner_part, target_part in zip(owner_parts, target_parts):
+            if owner_part != target_part:
+                break
+            common += 1
+
+        upward = [".."] * (len(owner_parts) - common)
+        downward = target_parts[common:]
+        parts = upward + downward
+        if not parts:
+            return "."
+        path = "/".join(parts)
+        if not upward:
+            return "./" + path
+        return path
 
     def destroy(self):
         if self._parent is not None:
@@ -397,6 +421,53 @@ class TDCliHandlerTests(unittest.TestCase):
         self.assertTrue(tailed["success"])
         self.assertEqual(listed["data"]["events"][0]["route"], "/dat/write")
         self.assertEqual(tailed["data"]["events"][0]["route"], "/dat/write")
+
+    def test_handle_par_set_normalizes_child_top_reference(self):
+        parent = FakeOp("/project1", "project1", op_type="containerCOMP", family="COMP", is_comp=True)
+        child = FakeOp("/project1/container1", "container1", op_type="containerCOMP", family="COMP", is_comp=True)
+        child._parent = parent
+        out1 = FakeOp("/project1/container1/out1", "out1", op_type="nullTOP", family="TOP")
+        out1._parent = child
+        child.children.append(out1)
+
+        child.par = FakeParCollection([FakeParam("top", "", style="TOP")])
+        ops = {
+            parent.path: parent,
+            child.path: child,
+            out1.path: out1,
+        }
+        self.module.op = ops.get
+
+        result = self.module.handle_par_set({"path": child.path, "params": {"top": "out1"}})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(child.par.top.val, "./out1")
+
+    def test_handle_shaders_apply_normalizes_pixeldat_reference(self):
+        parent = FakeOp("/project1/container1", "container1", op_type="containerCOMP", family="COMP", is_comp=True)
+        pixel = FakeDAT(path="/project1/container1/shader_pixel", text="before")
+        pixel._parent = parent
+        glsl = FakeOp(
+            "/project1/container1/glsl1",
+            "glsl1",
+            op_type="glslTOP",
+            family="TOP",
+            params=[FakeParam("pixeldat", "shader_pixel", style="DAT")],
+        )
+        glsl._parent = parent
+        glsl.warnings = lambda recurse=False: ""
+
+        ops = {
+            parent.path: parent,
+            pixel.path: pixel,
+            glsl.path: glsl,
+        }
+        self.module.op = ops.get
+
+        result = self.module.handle_shaders_apply({"path": glsl.path, "glsl": "void main() {}", "uniforms": []})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(glsl.par.pixeldat.val, "../shader_pixel")
 
     def _read_backup_payload(self, backup_path):
         with open(backup_path, "r", encoding="utf-8") as handle:

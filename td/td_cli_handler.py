@@ -76,6 +76,59 @@ def _error(message, data=None):
     return {'success': False, 'message': message, 'data': data}
 
 
+_OP_REFERENCE_STYLES = {
+    'OP', 'COMP', 'TOP', 'CHOP', 'SOP', 'DAT', 'MAT', 'OBJECT',
+}
+
+
+def _resolve_reference_target(owner, value):
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+
+    candidates = [text]
+    owner_path = getattr(owner, 'path', '')
+    if owner_path:
+        candidates.append(owner_path.rstrip('/') + '/' + text)
+    parent = owner.parent() if hasattr(owner, 'parent') else None
+    parent_path = getattr(parent, 'path', '')
+    if parent_path:
+        candidates.append(parent_path.rstrip('/') + '/' + text)
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        target = op(candidate)
+        if target is not None:
+            return target
+    return None
+
+
+def _normalize_op_reference_value(owner, par, value):
+    if not isinstance(value, str):
+        return value
+    if value.startswith('./') or value.startswith('../'):
+        return value
+
+    style = str(getattr(par, 'style', '')).upper()
+    if style not in _OP_REFERENCE_STYLES:
+        return value
+
+    target = _resolve_reference_target(owner, value)
+    if target is None or not hasattr(owner, 'relativePath'):
+        return value
+
+    try:
+        return owner.relativePath(target)
+    except Exception:
+        return value
+
+
 def _validate_connector_index(connectors, index, label):
     """Validate connector index access before mutating the network."""
     if not isinstance(index, int):
@@ -627,6 +680,7 @@ def handle_par_set(body):
         p = getattr(target.par, name, None)
         if p is None:
             return _error(f'Parameter not found: {name}')
+        value = _normalize_op_reference_value(target, p, value)
         p.val = value
         updated.append({'name': name, 'value': str(p.val)})
 
@@ -1333,6 +1387,11 @@ def handle_shaders_apply(body):
 
     # Write the GLSL code
     pixel_dat.text = glsl_code
+    if hasattr(target.par, 'pixeldat'):
+        try:
+            target.par.pixeldat.val = _normalize_op_reference_value(target, target.par.pixeldat, pixel_dat.path)
+        except Exception:
+            pass
 
     # Configure uniforms
     for i, u in enumerate(uniforms):
