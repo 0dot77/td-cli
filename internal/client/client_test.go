@@ -3,6 +3,7 @@ package client
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,55 @@ func TestParseResponsePlainTextFallback(t *testing.T) {
 	}
 	if result.Message != "plain error" {
 		t.Fatalf("expected plain text message, got %q", result.Message)
+	}
+}
+
+func TestHealthSendsAuthHeader(t *testing.T) {
+	t.Parallel()
+
+	var gotHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-TD-CLI-Token")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"message":"ok","data":{"version":"0.1.0"}}`))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+		Token:      "secret-token",
+	}
+
+	if _, err := client.Health(); err != nil {
+		t.Fatalf("Health returned error: %v", err)
+	}
+	if gotHeader != "secret-token" {
+		t.Fatalf("expected auth header to be sent, got %q", gotHeader)
+	}
+}
+
+func TestCallSendsAuthHeader(t *testing.T) {
+	t.Parallel()
+
+	var gotHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-TD-CLI-Token")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"message":"ok","data":{}}`))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+		Token:      "secret-token",
+	}
+
+	if _, err := client.Call("/status", map[string]string{"ping": "pong"}); err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if gotHeader != "secret-token" {
+		t.Fatalf("expected auth header to be sent, got %q", gotHeader)
 	}
 }

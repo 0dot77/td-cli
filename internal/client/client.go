@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/td-cli/td-cli/internal/protocol"
@@ -15,6 +17,7 @@ import (
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
+	Token      string
 }
 
 // New creates a Client for the given port with the specified timeout.
@@ -24,12 +27,19 @@ func New(port int, timeout time.Duration) *Client {
 		HTTPClient: &http.Client{
 			Timeout: timeout,
 		},
+		Token: strings.TrimSpace(os.Getenv("TD_CLI_TOKEN")),
 	}
 }
 
 // Health checks the server health endpoint.
 func (c *Client) Health() (*protocol.Response, error) {
-	resp, err := c.HTTPClient.Get(c.BaseURL + "/health")
+	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/health", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.applyAuth(req)
+
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to TD at %s: %w", c.BaseURL, err)
 	}
@@ -45,17 +55,27 @@ func (c *Client) Call(endpoint string, payload interface{}) (*protocol.Response,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := c.HTTPClient.Post(
-		c.BaseURL+endpoint,
-		"application/json",
-		bytes.NewReader(body),
-	)
+	req, err := http.NewRequest(http.MethodPost, c.BaseURL+endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.applyAuth(req)
+
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	return parseResponse(resp)
+}
+
+func (c *Client) applyAuth(req *http.Request) {
+	if c.Token == "" {
+		return
+	}
+	req.Header.Set("X-TD-CLI-Token", c.Token)
 }
 
 func parseResponse(resp *http.Response) (*protocol.Response, error) {

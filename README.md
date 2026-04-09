@@ -34,6 +34,8 @@ The TouchDesigner side writes heartbeat files to `~/.td-cli/instances/`, and `td
 
 In an agent workflow, the LLM is the reasoning layer and `td-cli` is the execution layer. The model decides what to inspect or change, and `td-cli` performs the concrete operations against a live TouchDesigner session.
 
+Security note: if you set `TD_CLI_TOKEN` in both the shell running `td-cli` and the TouchDesigner process environment before launch, the server will require that shared token on every HTTP request.
+
 ### Beginner Install Guide
 
 #### 1. Prerequisites
@@ -245,6 +247,8 @@ TouchDesigner Web Server DAT + Python handler
 TouchDesigner 쪽은 `~/.td-cli/instances/` 경로에 heartbeat 파일을 기록하고, `td-cli`는 그 파일을 읽어서 현재 실행 중인 프로젝트를 자동 탐지합니다.
 
 에이전트 워크플로에서 LLM은 추론 레이어이고 `td-cli`는 실행 레이어입니다. 모델이 무엇을 조회하거나 수정할지 판단하고, `td-cli`가 그 결정을 실제 TouchDesigner 세션에 반영합니다.
+
+보안 참고: `td-cli`를 실행하는 셸과 TouchDesigner 프로세스를 실행하기 전 환경에 동일한 `TD_CLI_TOKEN` 값을 설정하면, 서버가 모든 HTTP 요청에 대해 해당 공유 토큰을 요구합니다.
 
 ### 초심자용 설치 가이드
 
