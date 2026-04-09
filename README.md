@@ -4,7 +4,7 @@
 
 ## English
 
-TouchDesigner CLI for Claude Code.
+TouchDesigner CLI for LLM agents and terminal-driven workflows.
 
 `td-cli` lets you control a live TouchDesigner project from the terminal with commands such as `status`, `ops`, `par`, `dat`, and `exec`.
 
@@ -13,12 +13,12 @@ TouchDesigner CLI for Claude Code.
 - Connect to a running TouchDesigner project over HTTP
 - Discover running TD instances automatically
 - Inspect and edit operators, parameters, DATs, and networks
-- Generate a `CLAUDE.md` file so Claude Code can use `td-cli`
+- Generate starter guidance for agent-assisted workflows
 
 ### How It Works
 
 ```text
-Claude Code / Terminal
+LLM Agent / Terminal
         |
         v
 td-cli (Go binary)
@@ -31,6 +31,8 @@ TouchDesigner Web Server DAT + Python handler
 ```
 
 The TouchDesigner side writes heartbeat files to `~/.td-cli/instances/`, and `td-cli` uses those files to auto-discover active projects.
+
+In an agent workflow, the LLM is the reasoning layer and `td-cli` is the execution layer. The model decides what to inspect or change, and `td-cli` performs the concrete operations against a live TouchDesigner session.
 
 ### Beginner Install Guide
 
@@ -114,13 +116,13 @@ td-cli --port 9500 status
 td-cli --project "C:\path\to\your\project.toe" status
 ```
 
-#### 5. Enable Claude Code Integration
+#### 5. Bootstrap Agent Guidance
 
 ```powershell
 td-cli init
 ```
 
-This creates a `CLAUDE.md` file in the current folder with command examples and usage notes for Claude Code.
+This currently creates a `CLAUDE.md` file in the current folder with command examples and usage notes. The CLI itself is not Claude-specific: Codex and other agents can use the same commands directly, or adapt the generated guidance into their own project-instruction format such as `AGENTS.md`.
 
 ### First Commands to Try
 
@@ -214,7 +216,7 @@ td-cli help
 
 ## 한국어
 
-Claude Code용 TouchDesigner CLI입니다.
+LLM 에이전트와 터미널 기반 워크플로를 위한 TouchDesigner CLI입니다.
 
 `td-cli`는 TouchDesigner 프로젝트를 터미널에서 제어할 수 있게 해주는 도구입니다. `status`, `ops`, `par`, `dat`, `exec` 같은 명령으로 TouchDesigner를 다룰 수 있습니다.
 
@@ -223,12 +225,12 @@ Claude Code용 TouchDesigner CLI입니다.
 - 실행 중인 TouchDesigner 프로젝트에 HTTP로 연결합니다
 - 실행 중인 TD 인스턴스를 자동으로 찾습니다
 - 오퍼레이터, 파라미터, DAT, 네트워크를 조회하고 수정할 수 있습니다
-- Claude Code가 `td-cli`를 사용할 수 있도록 `CLAUDE.md`를 생성합니다
+- 에이전트 보조 워크플로를 위한 시작 가이드를 생성합니다
 
 ### 동작 방식
 
 ```text
-Claude Code / Terminal
+LLM Agent / Terminal
         |
         v
 td-cli (Go binary)
@@ -241,6 +243,8 @@ TouchDesigner Web Server DAT + Python handler
 ```
 
 TouchDesigner 쪽은 `~/.td-cli/instances/` 경로에 heartbeat 파일을 기록하고, `td-cli`는 그 파일을 읽어서 현재 실행 중인 프로젝트를 자동 탐지합니다.
+
+에이전트 워크플로에서 LLM은 추론 레이어이고 `td-cli`는 실행 레이어입니다. 모델이 무엇을 조회하거나 수정할지 판단하고, `td-cli`가 그 결정을 실제 TouchDesigner 세션에 반영합니다.
 
 ### 초심자용 설치 가이드
 
@@ -326,13 +330,13 @@ td-cli --port 9500 status
 td-cli --project "C:\path\to\your\project.toe" status
 ```
 
-#### 5. Claude Code 연동
+#### 5. 에이전트 가이드 시작하기
 
 ```powershell
 td-cli init
 ```
 
-이 명령은 현재 폴더에 `CLAUDE.md`를 만들고, Claude Code가 참고할 수 있는 명령 예시와 사용법을 기록합니다.
+이 명령은 현재 폴더에 `CLAUDE.md`를 만들고, 명령 예시와 사용법을 기록합니다. 현재 출력 파일 이름은 Claude 스타일이지만, CLI 자체는 Claude 전용이 아닙니다. Codex 같은 다른 에이전트도 같은 명령을 직접 사용할 수 있고, 필요하면 내용을 `AGENTS.md` 같은 형식으로 옮겨서 사용할 수 있습니다.
 
 ### 처음 해볼 명령
 

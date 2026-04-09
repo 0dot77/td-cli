@@ -25,3 +25,5 @@ docs/embed/
 # OS
 .DS_Store
 Thumbs.db
+.omx/
+__pycache__/

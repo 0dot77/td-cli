@@ -61,6 +61,15 @@ def _error(message, data=None):
     return {'success': False, 'message': message, 'data': data}
 
 
+def _validate_connector_index(connectors, index, label):
+    """Validate connector index access before mutating the network."""
+    if not isinstance(index, int):
+        return _error(f'{label} index must be an integer')
+    if index < 0 or index >= len(connectors):
+        return _error(f'{label} index out of range: {index}')
+    return None
+
+
 # --- exec ---
 
 def handle_exec(body):
@@ -84,8 +93,9 @@ def handle_exec(body):
             wrapped = f"def __td_cli_exec__():\n"
             for line in code.split('\n'):
                 wrapped += f"    {line}\n"
-            exec(wrapped)
-            result_value = locals()['__td_cli_exec__']()
+            namespace = {}
+            exec(wrapped, globals(), namespace)
+            result_value = namespace['__td_cli_exec__']()
         else:
             exec(code)
     except Exception as e:
@@ -349,6 +359,14 @@ def handle_connect(body):
         return _error(f'Source not found: {src_path}')
     if dst_op is None:
         return _error(f'Destination not found: {dst_path}')
+
+    err = _validate_connector_index(src_op.outputConnectors, src_index, 'Source connector')
+    if err:
+        return err
+
+    err = _validate_connector_index(dst_op.inputConnectors, dst_index, 'Destination connector')
+    if err:
+        return err
 
     src_op.outputConnectors[src_index].connect(dst_op.inputConnectors[dst_index])
 
