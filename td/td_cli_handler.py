@@ -5,6 +5,10 @@
 import json
 import sys
 import io
+import os
+import time
+import tempfile
+import hashlib
 import traceback
 
 
@@ -114,6 +118,78 @@ def _restore_snapshot_value(pdata):
     if value_type == 'none':
         return None
     return value
+
+
+def _project_path():
+    return getattr(project, 'folder', '') or getattr(project, 'name', '') or 'unknown-project'
+
+
+def _backup_root_dir():
+    home = os.path.expanduser('~')
+    project_hash = hashlib.sha256(_project_path().encode('utf-8')).hexdigest()[:16]
+    return os.path.join(home, '.td-cli', 'backups', project_hash)
+
+
+def _write_backup(kind, payload):
+    """Persist a JSON backup before mutating the live project."""
+    backup_dir = _backup_root_dir()
+    os.makedirs(backup_dir, exist_ok=True)
+
+    backup_id = f"{int(time.time() * 1000)}-{kind}"
+    backup_path = os.path.join(backup_dir, backup_id + '.json')
+    backup_record = {
+        'id': backup_id,
+        'kind': kind,
+        'createdAt': time.time(),
+        'projectName': getattr(project, 'name', ''),
+        'projectPath': _project_path(),
+        'payload': payload,
+    }
+
+    fd, tmp_path = tempfile.mkstemp(dir=backup_dir, suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w') as handle:
+            json.dump(backup_record, handle, indent=2)
+        os.replace(tmp_path, backup_path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+    return {
+        'backupId': backup_id,
+        'backupPath': backup_path,
+    }
+
+
+def _snapshot_dat(target):
+    is_table = target.isTable if hasattr(target, 'isTable') else False
+    if is_table:
+        rows = []
+        for row_idx in range(target.numRows):
+            row = []
+            for col_idx in range(target.numCols):
+                row.append(str(target[row_idx, col_idx]))
+            rows.append(row)
+        return {
+            'path': target.path,
+            'family': target.family,
+            'isTable': True,
+            'table': rows,
+            'numRows': target.numRows,
+            'numCols': target.numCols,
+        }
+
+    return {
+        'path': target.path,
+        'family': target.family,
+        'isTable': False,
+        'content': target.text,
+        'numRows': target.numRows,
+        'numCols': target.numCols,
+    }
 
 
 # --- exec ---
@@ -261,10 +337,16 @@ def handle_ops_delete(body):
     if target is None:
         return _error(f'Operator not found: {path}')
 
+    backup_meta = _write_backup('ops-delete', {
+        'targetPath': path,
+        'parentPath': target.parent().path if hasattr(target, 'parent') and target.parent() else '',
+        'snapshot': _serialize_network_snapshot(target, 20, include_defaults=True, include_root=True),
+    })
+
     name = target.name
     target.destroy()
 
-    return _success(f'Deleted {name}')
+    return _success(f'Deleted {name}', backup_meta)
 
 
 def handle_ops_info(body):
@@ -460,29 +542,22 @@ def handle_dat_read(body):
     if target.family != 'DAT':
         return _error(f'{path} is not a DAT (family: {target.family})')
 
-    # Check if it's a table DAT
-    is_table = target.isTable if hasattr(target, 'isTable') else False
+    snapshot = _snapshot_dat(target)
 
-    if is_table:
-        rows = []
-        for row_idx in range(target.numRows):
-            row = []
-            for col_idx in range(target.numCols):
-                row.append(str(target[row_idx, col_idx]))
-            rows.append(row)
+    if snapshot['isTable']:
         return _success('DAT content read', {
             'content': None,
-            'table': rows,
-            'numRows': target.numRows,
-            'numCols': target.numCols,
+            'table': snapshot['table'],
+            'numRows': snapshot['numRows'],
+            'numCols': snapshot['numCols'],
             'isTable': True,
         })
     else:
         return _success('DAT content read', {
-            'content': target.text,
+            'content': snapshot['content'],
             'table': None,
-            'numRows': target.numRows,
-            'numCols': target.numCols,
+            'numRows': snapshot['numRows'],
+            'numCols': snapshot['numCols'],
             'isTable': False,
         })
 
@@ -503,14 +578,19 @@ def handle_dat_write(body):
     if target.family != 'DAT':
         return _error(f'{path} is not a DAT (family: {target.family})')
 
+    backup_meta = _write_backup('dat-write', {
+        'targetPath': path,
+        'before': _snapshot_dat(target),
+    })
+
     if table is not None:
         target.clear()
         for row in table:
             target.appendRow(row)
-        return _success(f'Wrote {len(table)} rows to table DAT')
+        return _success(f'Wrote {len(table)} rows to table DAT', backup_meta)
     elif content is not None:
         target.text = content
-        return _success('Wrote content to DAT')
+        return _success('Wrote content to DAT', backup_meta)
     else:
         return _error('No content or table data provided')
 
@@ -648,16 +728,39 @@ def _serialize_op(o, include_defaults=False):
     return node
 
 
-def _walk_network(parent, remaining_depth, include_defaults=False):
-    """Recursively walk network and serialize all operators."""
+def _collect_network_nodes(parent, remaining_depth, include_defaults=False, include_root=False):
+    """Recursively walk network and serialize operators."""
     nodes = []
-    if remaining_depth <= 0:
+    if remaining_depth < 0:
         return nodes
+
+    if include_root:
+        nodes.append(_serialize_op(parent, include_defaults))
+        if remaining_depth == 0:
+            return nodes
+
+    if remaining_depth == 0:
+        return nodes
+
     for child in parent.findChildren(depth=1):
         nodes.append(_serialize_op(child, include_defaults))
         if child.isCOMP and child.name != 'TDCliServer':
-            nodes.extend(_walk_network(child, remaining_depth - 1, include_defaults))
+            nodes.extend(_collect_network_nodes(child, remaining_depth - 1, include_defaults, include_root=False))
     return nodes
+
+
+def _serialize_network_snapshot(target, depth, include_defaults=False, include_root=False):
+    nodes = _collect_network_nodes(target, depth, include_defaults, include_root=include_root)
+    return {
+        'version': 2,
+        'rootPath': target.path,
+        'exportTime': absTime.seconds,
+        'tdVersion': app.version,
+        'tdBuild': app.build,
+        'nodeCount': len(nodes),
+        'nodes': nodes,
+        'warningCount': sum(len(n.get('parameterErrors', [])) for n in nodes),
+    }
 
 
 def handle_network_export(body):
@@ -670,19 +773,8 @@ def handle_network_export(body):
     if target is None:
         return _error(f'Operator not found: {path}')
 
-    nodes = _walk_network(target, depth, include_defaults)
-
-    snapshot = {
-        'version': 2,
-        'rootPath': path,
-        'exportTime': absTime.seconds,
-        'tdVersion': app.version,
-        'tdBuild': app.build,
-        'nodeCount': len(nodes),
-        'nodes': nodes,
-        'warningCount': sum(len(n.get('parameterErrors', [])) for n in nodes),
-    }
-    return _success(f'Exported {len(nodes)} nodes', snapshot)
+    snapshot = _serialize_network_snapshot(target, depth, include_defaults, include_root=False)
+    return _success(f'Exported {snapshot["nodeCount"]} nodes', snapshot)
 
 
 def handle_network_import(body):
@@ -694,6 +786,12 @@ def handle_network_import(body):
     parent = op(target_path)
     if parent is None:
         return _error(f'Target not found: {target_path}')
+
+    backup_meta = _write_backup('network-import', {
+        'targetPath': target_path,
+        'before': _serialize_network_snapshot(parent, 10, include_defaults=True, include_root=False),
+        'incomingSnapshotVersion': snapshot.get('version', 1),
+    })
 
     created = []
     create_failures = []
@@ -790,6 +888,7 @@ def handle_network_import(body):
         'parameterFailures': parameter_failures,
         'connectionFailures': connection_failures,
         'warningCount': warning_count,
+        **backup_meta,
     })
 
 

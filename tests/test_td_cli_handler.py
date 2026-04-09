@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import os
 import pathlib
+import tempfile
 import unittest
 
 
@@ -60,9 +63,14 @@ class FakeParCollection:
 
 class FakeDAT:
     family = "DAT"
+    isTable = False
 
-    def __init__(self, text="original"):
+    def __init__(self, path="/project1/text1", text="original"):
+        self.path = path
+        self.name = path.rsplit("/", 1)[-1]
         self.text = text
+        self.numRows = 1
+        self.numCols = 1
 
 
 class FakeOp:
@@ -80,6 +88,7 @@ class FakeOp:
         self._params = params or []
         self.par = FakeParCollection(self._params)
         self.children = []
+        self._parent = None
 
     def pars(self):
         return self._params
@@ -99,11 +108,19 @@ class FakeOp:
     def create(self, op_type, name):
         child_path = f"{self.path.rstrip('/')}/{name}" if self.path != "/" else f"/{name}"
         child = FakeOp(child_path, name, op_type=op_type, params=self._created_params(name), is_comp=op_type.endswith("COMP"))
+        child._parent = self
         self.children.append(child)
         return child
 
     def _created_params(self, name):
         return []
+
+    def parent(self):
+        return self._parent
+
+    def destroy(self):
+        if self._parent is not None:
+            self._parent.children = [child for child in self._parent.children if child is not self]
 
 
 class FakeImportParent(FakeOp):
@@ -122,6 +139,20 @@ class FakeImportParent(FakeOp):
 class TDCliHandlerTests(unittest.TestCase):
     def setUp(self):
         self.module = load_handler_module()
+        self.temp_home = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_home.cleanup)
+        self.original_home = os.environ.get("HOME")
+        os.environ["HOME"] = self.temp_home.name
+        self.addCleanup(self._restore_home)
+        self.module.project = type("Project", (), {"name": "TestProject", "folder": "/shows/test.toe"})()
+        self.module.absTime = type("AbsTime", (), {"seconds": 12.5})()
+        self.module.app = type("App", (), {"version": "2023.1", "build": "12340"})()
+
+    def _restore_home(self):
+        if self.original_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self.original_home
 
     def test_handle_exec_return_value(self):
         result = self.module.handle_exec({"code": "return 42"})
@@ -170,6 +201,9 @@ class TDCliHandlerTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(dat.text, "")
+        self.assertIn("backupId", result["data"])
+        backup_payload = self._read_backup_payload(result["data"]["backupPath"])
+        self.assertEqual(backup_payload["before"]["content"], "before")
 
     def test_network_export_preserves_parameter_types(self):
         root = FakeOp("/", "root", op_type="containerCOMP", family="COMP", is_comp=True)
@@ -188,9 +222,6 @@ class TDCliHandlerTests(unittest.TestCase):
         root.children.append(child)
 
         self.module.op = {"/": root}.get
-        self.module.absTime = type("AbsTime", (), {"seconds": 12.5})()
-        self.module.app = type("App", (), {"version": "2023.1", "build": "12340"})()
-
         result = self.module.handle_network_export({"path": "/", "depth": 1})
 
         self.assertTrue(result["success"])
@@ -240,6 +271,9 @@ class TDCliHandlerTests(unittest.TestCase):
         self.assertEqual(result["data"]["warningCount"], 1)
         self.assertEqual(len(result["data"]["parameterFailures"]), 1)
         self.assertEqual(result["data"]["parameterFailures"][0]["parameter"], "missing")
+        self.assertIn("backupId", result["data"])
+        backup_payload = self._read_backup_payload(result["data"]["backupPath"])
+        self.assertEqual(backup_payload["targetPath"], "/target")
 
         created = parent.children[0]
         self.assertEqual(created.nodeX, 10)
@@ -249,6 +283,26 @@ class TDCliHandlerTests(unittest.TestCase):
         self.assertIs(created.par.enabled.val, True)
         self.assertEqual(created.par.size.val, (1, 2))
         self.assertEqual(created.par.script.expr, "me.time.seconds * 2")
+
+    def test_handle_ops_delete_creates_backup_snapshot(self):
+        parent = FakeOp("/project1", "project1", op_type="containerCOMP", family="COMP", is_comp=True)
+        child = FakeOp("/project1/noise1", "noise1")
+        child._parent = parent
+        parent.children.append(child)
+        self.module.op = {parent.path: parent, child.path: child}.get
+
+        result = self.module.handle_ops_delete({"path": child.path})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(parent.children, [])
+        backup_payload = self._read_backup_payload(result["data"]["backupPath"])
+        self.assertEqual(backup_payload["targetPath"], child.path)
+        self.assertEqual(backup_payload["snapshot"]["rootPath"], child.path)
+
+    def _read_backup_payload(self, backup_path):
+        with open(backup_path, "r", encoding="utf-8") as handle:
+            backup_record = json.load(handle)
+        return backup_record["payload"]
 
 
 if __name__ == "__main__":
