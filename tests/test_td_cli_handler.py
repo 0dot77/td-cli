@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import tempfile
+import time
 import unittest
 
 
@@ -71,6 +72,12 @@ class FakeDAT:
         self.text = text
         self.numRows = 1
         self.numCols = 1
+
+    def clear(self):
+        self.text = ""
+
+    def appendRow(self, row):
+        self.text = "\n".join(filter(None, [self.text, "\t".join(str(cell) for cell in row)]))
 
 
 class FakeOp:
@@ -298,6 +305,48 @@ class TDCliHandlerTests(unittest.TestCase):
         backup_payload = self._read_backup_payload(result["data"]["backupPath"])
         self.assertEqual(backup_payload["targetPath"], child.path)
         self.assertEqual(backup_payload["snapshot"]["rootPath"], child.path)
+
+    def test_backup_list_returns_newest_first(self):
+        dat = FakeDAT(text="before")
+        self.module.op = {"/project1/text1": dat}.get
+
+        first = self.module.handle_dat_write({"path": "/project1/text1", "content": "one"})
+        time.sleep(0.001)
+        second = self.module.handle_dat_write({"path": "/project1/text1", "content": "two"})
+        result = self.module.handle_backup_list({"limit": 10})
+
+        self.assertTrue(result["success"])
+        backups = result["data"]["backups"]
+        self.assertGreaterEqual(len(backups), 2)
+        self.assertEqual(backups[0]["id"], second["data"]["backupId"])
+        self.assertEqual(backups[1]["id"], first["data"]["backupId"])
+
+    def test_backup_restore_recovers_previous_dat_content(self):
+        dat = FakeDAT(text="before")
+        self.module.op = {"/project1/text1": dat}.get
+
+        write_result = self.module.handle_dat_write({"path": "/project1/text1", "content": "after"})
+        self.assertEqual(dat.text, "after")
+
+        restore_result = self.module.handle_backup_restore({"id": write_result["data"]["backupId"]})
+
+        self.assertTrue(restore_result["success"])
+        self.assertEqual(dat.text, "before")
+        self.assertEqual(restore_result["data"]["restoredKind"], "dat-write")
+
+    def test_backup_restore_recovers_deleted_operator(self):
+        parent = FakeOp("/project1", "project1", op_type="containerCOMP", family="COMP", is_comp=True)
+        child = FakeOp("/project1/noise1", "noise1")
+        child._parent = parent
+        parent.children.append(child)
+        self.module.op = {parent.path: parent, child.path: child}.get
+
+        delete_result = self.module.handle_ops_delete({"path": child.path})
+        restore_result = self.module.handle_backup_restore({"id": delete_result["data"]["backupId"]})
+
+        self.assertTrue(restore_result["success"])
+        self.assertEqual(len(parent.children), 1)
+        self.assertEqual(parent.children[0].name, "noise1")
 
     def _read_backup_payload(self, backup_path):
         with open(backup_path, "r", encoding="utf-8") as handle:

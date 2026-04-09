@@ -160,6 +160,8 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli screenshot [path] -o file.png` | Save TOP output as PNG |
 | `td-cli project info` | Show project metadata |
 | `td-cli project save [path]` | Save the current project |
+| `td-cli backup list [--limit N]` | List recent backup artifacts |
+| `td-cli backup restore <backup-id>` | Restore a previous backup artifact |
 | `td-cli tox export <comp> -o file.tox` | Export a COMP as `.tox` |
 | `td-cli tox import <file.tox> [parent]` | Import a `.tox` file |
 | `td-cli network export [path] [-o file]` | Export a network snapshot |
@@ -376,6 +378,8 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli screenshot [path] -o file.png` | TOP 출력 PNG 저장 |
 | `td-cli project info` | 프로젝트 정보 조회 |
 | `td-cli project save [path]` | 프로젝트 저장 |
+| `td-cli backup list [--limit N]` | 최근 백업 목록 보기 |
+| `td-cli backup restore <backup-id>` | 이전 백업 복구 |
 | `td-cli tox export <comp> -o file.tox` | COMP를 `.tox`로 내보내기 |
 | `td-cli tox import <file.tox> [parent]` | `.tox` 파일 가져오기 |
 | `td-cli network export [path] [-o file]` | 네트워크 스냅샷 내보내기 |

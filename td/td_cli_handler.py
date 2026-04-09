@@ -31,6 +31,8 @@ def handle_request(uri, body):
         '/screenshot': handle_screenshot,
         '/network/export': handle_network_export,
         '/network/import': handle_network_import,
+        '/backup/list': handle_backup_list,
+        '/backup/restore': handle_backup_restore,
         '/network/describe': handle_network_describe,
         '/monitor': handle_monitor,
         '/shaders/apply': handle_shaders_apply,
@@ -135,7 +137,7 @@ def _write_backup(kind, payload):
     backup_dir = _backup_root_dir()
     os.makedirs(backup_dir, exist_ok=True)
 
-    backup_id = f"{int(time.time() * 1000)}-{kind}"
+    backup_id = f"{time.time_ns()}-{kind}"
     backup_path = os.path.join(backup_dir, backup_id + '.json')
     backup_record = {
         'id': backup_id,
@@ -190,6 +192,53 @@ def _snapshot_dat(target):
         'numRows': target.numRows,
         'numCols': target.numCols,
     }
+
+
+def _apply_dat_snapshot(target, snapshot):
+    if snapshot.get('isTable'):
+        target.clear()
+        for row in snapshot.get('table', []):
+            target.appendRow(row)
+    else:
+        target.text = snapshot.get('content', '')
+
+
+def _read_backup_record(backup_id):
+    backup_path = os.path.join(_backup_root_dir(), backup_id + '.json')
+    if not os.path.exists(backup_path):
+        return None, backup_path
+    with open(backup_path, 'r') as handle:
+        return json.load(handle), backup_path
+
+
+def _list_backup_records(limit=20):
+    backup_dir = _backup_root_dir()
+    if not os.path.isdir(backup_dir):
+        return []
+
+    records = []
+    for entry in os.listdir(backup_dir):
+        if not entry.endswith('.json'):
+            continue
+        path = os.path.join(backup_dir, entry)
+        try:
+            with open(path, 'r') as handle:
+                record = json.load(handle)
+            payload = record.get('payload', {})
+            records.append({
+                'id': record.get('id', entry[:-5]),
+                'kind': record.get('kind', ''),
+                'createdAt': record.get('createdAt', 0),
+                'projectName': record.get('projectName', ''),
+                'projectPath': record.get('projectPath', ''),
+                'path': path,
+                'targetPath': payload.get('targetPath', ''),
+            })
+        except Exception:
+            continue
+
+    records.sort(key=lambda item: item.get('createdAt', 0), reverse=True)
+    return records[:limit]
 
 
 # --- exec ---
@@ -763,61 +812,47 @@ def _serialize_network_snapshot(target, depth, include_defaults=False, include_r
     }
 
 
-def handle_network_export(body):
-    """Export network structure as JSON snapshot."""
-    path = body.get('path', '/')
-    depth = body.get('depth', 10)
-    include_defaults = body.get('includeDefaults', False)
-
-    target = op(path)
-    if target is None:
-        return _error(f'Operator not found: {path}')
-
-    snapshot = _serialize_network_snapshot(target, depth, include_defaults, include_root=False)
-    return _success(f'Exported {snapshot["nodeCount"]} nodes', snapshot)
+def _clear_children(target):
+    for child in list(target.findChildren(depth=1)):
+        child.destroy()
 
 
-def handle_network_import(body):
-    """Recreate network from snapshot JSON."""
-    snapshot = body.get('snapshot', {})
-    target_path = body.get('targetPath', snapshot.get('rootPath', '/'))
-
+def _import_network_snapshot(snapshot, target_path, create_backup=True, clear_existing=False):
     nodes = snapshot.get('nodes', [])
     parent = op(target_path)
     if parent is None:
         return _error(f'Target not found: {target_path}')
 
-    backup_meta = _write_backup('network-import', {
-        'targetPath': target_path,
-        'before': _serialize_network_snapshot(parent, 10, include_defaults=True, include_root=False),
-        'incomingSnapshotVersion': snapshot.get('version', 1),
-    })
+    backup_meta = {}
+    if create_backup:
+        backup_meta = _write_backup('network-import', {
+            'targetPath': target_path,
+            'before': _serialize_network_snapshot(parent, 10, include_defaults=True, include_root=False),
+            'incomingSnapshotVersion': snapshot.get('version', 1),
+        })
+
+    if clear_existing:
+        _clear_children(parent)
 
     created = []
     create_failures = []
     parameter_failures = []
     connection_failures = []
-    path_map = {}  # old path -> new op
+    path_map = {}
     root_path = snapshot.get('rootPath', '/')
 
-    # Sort nodes by path depth so parents are created before children
     sorted_nodes = sorted(nodes, key=lambda n: n['path'].count('/'))
 
-    # Phase 1: Create all operators, preserving hierarchy
     for node in sorted_nodes:
         try:
-            # Determine the correct parent for this node
-            # Compute relative path from the snapshot root to find the parent
             old_path = node['path']
             old_parent_path = '/'.join(old_path.rsplit('/', 1)[:-1]) or '/'
 
-            # Check if the parent was created in this import (nested COMP)
             if old_parent_path in path_map:
                 actual_parent = path_map[old_parent_path]
             elif old_parent_path == root_path or old_parent_path == '/':
                 actual_parent = parent
             else:
-                # Fallback: create under the target parent
                 actual_parent = parent
 
             new_op = actual_parent.create(node['type'], node['name'])
@@ -826,7 +861,6 @@ def handle_network_import(body):
             if node.get('comment'):
                 new_op.comment = node['comment']
 
-            # Set non-default parameters
             for pname, pdata in node.get('parameters', {}).items():
                 p = getattr(new_op.par, pname, None)
                 if p is None:
@@ -857,7 +891,6 @@ def handle_network_import(body):
                 'error': str(e),
             })
 
-    # Phase 2: Reconnect wires
     connections_made = 0
     for node in nodes:
         new_dst = path_map.get(node['path'])
@@ -889,6 +922,102 @@ def handle_network_import(body):
         'connectionFailures': connection_failures,
         'warningCount': warning_count,
         **backup_meta,
+    })
+
+
+def handle_network_export(body):
+    """Export network structure as JSON snapshot."""
+    path = body.get('path', '/')
+    depth = body.get('depth', 10)
+    include_defaults = body.get('includeDefaults', False)
+
+    target = op(path)
+    if target is None:
+        return _error(f'Operator not found: {path}')
+
+    snapshot = _serialize_network_snapshot(target, depth, include_defaults, include_root=False)
+    return _success(f'Exported {snapshot["nodeCount"]} nodes', snapshot)
+
+
+def handle_network_import(body):
+    """Recreate network from snapshot JSON."""
+    snapshot = body.get('snapshot', {})
+    target_path = body.get('targetPath', snapshot.get('rootPath', '/'))
+    return _import_network_snapshot(snapshot, target_path, create_backup=True, clear_existing=False)
+
+
+# --- backup ---
+
+def handle_backup_list(body):
+    """List recent backup artifacts for the current project."""
+    limit = body.get('limit', 20)
+    try:
+        limit = int(limit)
+    except Exception:
+        limit = 20
+    if limit <= 0:
+        limit = 20
+
+    backups = _list_backup_records(limit=limit)
+    return _success(f'Found {len(backups)} backup(s)', {'backups': backups})
+
+
+def handle_backup_restore(body):
+    """Restore a previously recorded backup artifact."""
+    backup_id = body.get('id', '')
+    if not backup_id:
+        return _error('No backup id provided')
+
+    record, backup_path = _read_backup_record(backup_id)
+    if record is None:
+        return _error(f'Backup not found: {backup_id}', {'backupPath': backup_path})
+
+    kind = record.get('kind', '')
+    payload = record.get('payload', {})
+
+    if kind == 'dat-write':
+        target = op(payload.get('targetPath', ''))
+        if target is None:
+            return _error(f'Target not found: {payload.get("targetPath", "")}')
+        _apply_dat_snapshot(target, payload.get('before', {}))
+        return _success(f'Restored backup {backup_id}', {
+            'restoredKind': kind,
+            'restoredPath': payload.get('targetPath', ''),
+            'backupId': backup_id,
+            'backupPath': backup_path,
+        })
+
+    if kind == 'ops-delete':
+        snapshot = payload.get('snapshot', {})
+        target_path = payload.get('parentPath', snapshot.get('rootPath', '/'))
+        result = _import_network_snapshot(snapshot, target_path, create_backup=False, clear_existing=False)
+        if result.get('success'):
+            data = result.get('data', {})
+            data.update({
+                'restoredKind': kind,
+                'backupId': backup_id,
+                'backupPath': backup_path,
+            })
+            result['message'] = f'Restored backup {backup_id}'
+        return result
+
+    if kind == 'network-import':
+        before_snapshot = payload.get('before', {})
+        target_path = payload.get('targetPath', before_snapshot.get('rootPath', '/'))
+        result = _import_network_snapshot(before_snapshot, target_path, create_backup=False, clear_existing=True)
+        if result.get('success'):
+            data = result.get('data', {})
+            data.update({
+                'restoredKind': kind,
+                'backupId': backup_id,
+                'backupPath': backup_path,
+            })
+            result['message'] = f'Restored backup {backup_id}'
+        return result
+
+    return _error(f'Unsupported backup kind: {kind}', {
+        'backupId': backup_id,
+        'backupPath': backup_path,
     })
 
 
@@ -1296,6 +1425,22 @@ TOOL_SCHEMAS = [
         'parameters': [
             {'name': 'snapshot', 'type': 'object', 'required': True, 'description': 'Network snapshot JSON object'},
             {'name': 'targetPath', 'type': 'string', 'required': False, 'description': 'Target parent path (default: from snapshot)'},
+        ],
+    },
+    {
+        'name': 'backup/list',
+        'route': '/backup/list',
+        'description': 'List recent backup artifacts for the current project',
+        'parameters': [
+            {'name': 'limit', 'type': 'integer', 'required': False, 'description': 'Maximum backups to return (default: 20)'},
+        ],
+    },
+    {
+        'name': 'backup/restore',
+        'route': '/backup/restore',
+        'description': 'Restore a previous backup artifact by id',
+        'parameters': [
+            {'name': 'id', 'type': 'string', 'required': True, 'description': 'Backup id returned by a mutating command or backup list'},
         ],
     },
     {

@@ -199,6 +199,9 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 	case "project":
 		return runProject(c, args, jsonOutput)
 
+	case "backup":
+		return runBackup(c, args, jsonOutput)
+
 	case "tools":
 		if len(args) == 0 || args[0] == "list" {
 			return commands.ToolsList(c, jsonOutput)
@@ -415,6 +418,31 @@ func runProject(c *client.Client, args []string, jsonOutput bool) error {
 		return commands.ProjectSave(c, path, jsonOutput)
 	default:
 		return fmt.Errorf("unknown project subcommand: %s (use info, save)", args[0])
+	}
+}
+
+func runBackup(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return commands.BackupList(c, 20, jsonOutput)
+	}
+
+	switch args[0] {
+	case "list":
+		limit := 20
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.BackupList(c, limit, jsonOutput)
+	case "restore":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli backup restore <backup-id>")
+		}
+		return commands.BackupRestore(c, args[1], jsonOutput)
+	default:
+		return fmt.Errorf("unknown backup subcommand: %s (use list, restore)", args[0])
 	}
 }
 
@@ -841,6 +869,8 @@ Commands:
   screenshot [path] [-o file]    Capture TOP as PNG
   project info                   Project metadata
   project save [path]            Save project
+  backup list [--limit N]        List recent backup artifacts
+  backup restore <backup-id>     Restore a backup artifact
   tox export <comp> -o <file>    Export COMP as .tox file
   tox import <file> [parent]     Import .tox into project
   network export [path] [-o f]   Export network as JSON snapshot
