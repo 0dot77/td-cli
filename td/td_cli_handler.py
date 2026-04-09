@@ -104,6 +104,14 @@ def _snapshot_value(value):
     return str(value), type(value).__name__
 
 
+def _operator_create_type(op_obj):
+    """Return the type token required by parent.create(...)."""
+    create_type = getattr(op_obj, 'OPType', None)
+    if create_type:
+        return str(create_type)
+    return str(op_obj.type)
+
+
 def _snapshot_values_equal(value, default):
     """Compare values after JSON-safe normalization."""
     return _snapshot_value(value)[0] == _snapshot_value(default)[0]
@@ -838,6 +846,7 @@ def _serialize_op(o, include_defaults=False):
         'path': o.path,
         'name': o.name,
         'type': o.type,
+        'createType': _operator_create_type(o),
         'family': o.family,
         'nodeX': o.nodeX,
         'nodeY': o.nodeY,
@@ -963,7 +972,8 @@ def _import_network_snapshot(snapshot, target_path, create_backup=True, clear_ex
             else:
                 actual_parent = parent
 
-            new_op = actual_parent.create(node['type'], node['name'])
+            create_type = node.get('createType') or node.get('type')
+            new_op = actual_parent.create(create_type, node['name'])
             new_op.nodeX = node.get('nodeX', 0)
             new_op.nodeY = node.get('nodeY', 0)
             if node.get('comment'):

@@ -85,6 +85,7 @@ class FakeOp:
         self.path = path
         self.name = name
         self.type = op_type
+        self.OPType = op_type
         self.family = family
         self.nodeX = 0
         self.nodeY = 0
@@ -235,6 +236,7 @@ class TDCliHandlerTests(unittest.TestCase):
         snapshot = result["data"]
         self.assertEqual(snapshot["version"], 2)
         node = snapshot["nodes"][0]
+        self.assertEqual(node["createType"], "nullTOP")
         self.assertEqual(node["parameters"]["speed"]["value"], 3)
         self.assertEqual(node["parameters"]["speed"]["valueType"], "int")
         self.assertEqual(node["parameters"]["gain"]["valueType"], "float")
@@ -256,6 +258,7 @@ class TDCliHandlerTests(unittest.TestCase):
                     "path": "/project1/typed",
                     "name": "typed",
                     "type": "nullTOP",
+                    "createType": "nullTOP",
                     "family": "TOP",
                     "nodeX": 10,
                     "nodeY": 20,
