@@ -49,14 +49,21 @@ def handle_request(uri, body):
             'data': None
         }
 
+    request_id = _new_request_id()
+    started_at = time.time()
+
     try:
-        return handler(body)
+        result = handler(body)
     except Exception as e:
-        return {
+        result = {
             'success': False,
             'message': str(e),
             'data': {'traceback': traceback.format_exc()}
         }
+
+    result = _attach_request_id(result, request_id)
+    _log_request_event(uri, body, result, request_id, started_at)
+    return result
 
 
 def _success(message, data=None):
@@ -130,6 +137,105 @@ def _backup_root_dir():
     home = os.path.expanduser('~')
     project_hash = hashlib.sha256(_project_path().encode('utf-8')).hexdigest()[:16]
     return os.path.join(home, '.td-cli', 'backups', project_hash)
+
+
+def _logs_root_dir():
+    home = os.path.expanduser('~')
+    project_hash = hashlib.sha256(_project_path().encode('utf-8')).hexdigest()[:16]
+    return os.path.join(home, '.td-cli', 'logs', project_hash)
+
+
+def _events_log_path():
+    return os.path.join(_logs_root_dir(), 'events.jsonl')
+
+
+def _new_request_id():
+    return f"{time.time_ns()}"
+
+
+def _attach_request_id(result, request_id):
+    data = result.get('data')
+    if isinstance(data, dict):
+        data.setdefault('requestId', request_id)
+    elif data is None:
+        result['data'] = {'requestId': request_id}
+    else:
+        result['data'] = {'requestId': request_id, 'value': data}
+    return result
+
+
+def _target_path_from_body(body, result):
+    if isinstance(body, dict):
+        for key in ('path', 'targetPath', 'parentPath', 'toxPath'):
+            value = body.get(key)
+            if value:
+                return value
+        if body.get('src') and body.get('dst'):
+            return f"{body.get('src')} -> {body.get('dst')}"
+        if body.get('id'):
+            return body.get('id')
+
+    data = result.get('data', {})
+    if isinstance(data, dict):
+        for key in ('restoredPath', 'targetPath', 'backupId'):
+            value = data.get(key)
+            if value:
+                return value
+    return ''
+
+
+def _append_log_event(event):
+    logs_dir = _logs_root_dir()
+    os.makedirs(logs_dir, exist_ok=True)
+    path = _events_log_path()
+    with open(path, 'a', encoding='utf-8') as handle:
+        handle.write(json.dumps(event, ensure_ascii=True) + '\n')
+
+
+def _read_log_events(limit=50):
+    path = _events_log_path()
+    if not os.path.exists(path):
+        return []
+
+    events = []
+    with open(path, 'r', encoding='utf-8') as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except Exception:
+                continue
+
+    return events[-limit:] if limit > 0 else events
+
+
+def _log_request_event(uri, body, result, request_id, started_at):
+    if uri in ('/logs/list', '/logs/tail'):
+        return
+
+    data = result.get('data', {})
+    if not isinstance(data, dict):
+        data = {}
+
+    event = {
+        'timestamp': time.time(),
+        'requestId': request_id,
+        'route': uri,
+        'projectName': getattr(project, 'name', ''),
+        'projectPath': _project_path(),
+        'targetPath': _target_path_from_body(body, result),
+        'success': bool(result.get('success', False)),
+        'durationMs': round((time.time() - started_at) * 1000, 3),
+        'backupId': data.get('backupId'),
+        'warningCount': data.get('warningCount', 0),
+        'message': result.get('message', ''),
+    }
+    if not result.get('success', False):
+        event['error'] = result.get('message', '')
+
+    _append_log_event(event)
 
 
 def _write_backup(kind, payload):
@@ -1021,6 +1127,36 @@ def handle_backup_restore(body):
     })
 
 
+# --- logs ---
+
+def handle_logs_list(body):
+    """List recent audit log events (newest first)."""
+    limit = body.get('limit', 20)
+    try:
+        limit = int(limit)
+    except Exception:
+        limit = 20
+    if limit <= 0:
+        limit = 20
+
+    events = list(reversed(_read_log_events(limit=limit)))
+    return _success(f'Found {len(events)} log event(s)', {'events': events})
+
+
+def handle_logs_tail(body):
+    """Return recent audit log events in chronological order."""
+    limit = body.get('limit', 20)
+    try:
+        limit = int(limit)
+    except Exception:
+        limit = 20
+    if limit <= 0:
+        limit = 20
+
+    events = _read_log_events(limit=limit)
+    return _success(f'Found {len(events)} log event(s)', {'events': events})
+
+
 # --- describe ---
 
 def handle_network_describe(body):
@@ -1441,6 +1577,22 @@ TOOL_SCHEMAS = [
         'description': 'Restore a previous backup artifact by id',
         'parameters': [
             {'name': 'id', 'type': 'string', 'required': True, 'description': 'Backup id returned by a mutating command or backup list'},
+        ],
+    },
+    {
+        'name': 'logs/list',
+        'route': '/logs/list',
+        'description': 'List recent audit log events (newest first)',
+        'parameters': [
+            {'name': 'limit', 'type': 'integer', 'required': False, 'description': 'Maximum log events to return (default: 20)'},
+        ],
+    },
+    {
+        'name': 'logs/tail',
+        'route': '/logs/tail',
+        'description': 'Read recent audit log events in chronological order',
+        'parameters': [
+            {'name': 'limit', 'type': 'integer', 'required': False, 'description': 'Maximum log events to return (default: 20)'},
         ],
     },
     {

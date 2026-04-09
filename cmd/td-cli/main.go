@@ -202,6 +202,9 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 	case "backup":
 		return runBackup(c, args, jsonOutput)
 
+	case "logs":
+		return runLogs(c, args, jsonOutput)
+
 	case "tools":
 		if len(args) == 0 || args[0] == "list" {
 			return commands.ToolsList(c, jsonOutput)
@@ -443,6 +446,35 @@ func runBackup(c *client.Client, args []string, jsonOutput bool) error {
 		return commands.BackupRestore(c, args[1], jsonOutput)
 	default:
 		return fmt.Errorf("unknown backup subcommand: %s (use list, restore)", args[0])
+	}
+}
+
+func runLogs(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return commands.LogsTail(c, 20, jsonOutput)
+	}
+
+	switch args[0] {
+	case "list":
+		limit := 20
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.LogsList(c, limit, jsonOutput)
+	case "tail":
+		limit := 20
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.LogsTail(c, limit, jsonOutput)
+	default:
+		return fmt.Errorf("unknown logs subcommand: %s (use list, tail)", args[0])
 	}
 }
 
@@ -871,6 +903,8 @@ Commands:
   project save [path]            Save project
   backup list [--limit N]        List recent backup artifacts
   backup restore <backup-id>     Restore a backup artifact
+  logs list [--limit N]          List recent audit log events
+  logs tail [--limit N]          Read recent audit log events
   tox export <comp> -o <file>    Export COMP as .tox file
   tox import <file> [parent]     Import .tox into project
   network export [path] [-o f]   Export network as JSON snapshot

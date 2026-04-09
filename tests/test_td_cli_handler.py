@@ -348,10 +348,48 @@ class TDCliHandlerTests(unittest.TestCase):
         self.assertEqual(len(parent.children), 1)
         self.assertEqual(parent.children[0].name, "noise1")
 
+    def test_handle_request_writes_audit_log_with_request_and_backup_ids(self):
+        dat = FakeDAT(text="before")
+        self.module.op = {"/project1/text1": dat}.get
+
+        result = self.module.handle_request("/dat/write", {"path": "/project1/text1", "content": "after"})
+
+        self.assertTrue(result["success"])
+        self.assertIn("requestId", result["data"])
+        events = self._read_events()
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event["route"], "/dat/write")
+        self.assertEqual(event["targetPath"], "/project1/text1")
+        self.assertEqual(event["requestId"], result["data"]["requestId"])
+        self.assertEqual(event["backupId"], result["data"]["backupId"])
+
+    def test_logs_list_and_tail_ordering(self):
+        dat = FakeDAT(text="before")
+        self.module.op = {"/project1/text1": dat}.get
+
+        first = self.module.handle_request("/dat/write", {"path": "/project1/text1", "content": "one"})
+        time.sleep(0.001)
+        second = self.module.handle_request("/dat/write", {"path": "/project1/text1", "content": "two"})
+
+        listed = self.module.handle_logs_list({"limit": 10})
+        tailed = self.module.handle_logs_tail({"limit": 10})
+
+        self.assertTrue(listed["success"])
+        self.assertTrue(tailed["success"])
+        self.assertEqual(listed["data"]["events"][0]["requestId"], second["data"]["requestId"])
+        self.assertEqual(listed["data"]["events"][1]["requestId"], first["data"]["requestId"])
+        self.assertEqual(tailed["data"]["events"][0]["requestId"], first["data"]["requestId"])
+        self.assertEqual(tailed["data"]["events"][1]["requestId"], second["data"]["requestId"])
+
     def _read_backup_payload(self, backup_path):
         with open(backup_path, "r", encoding="utf-8") as handle:
             backup_record = json.load(handle)
         return backup_record["payload"]
+
+    def _read_events(self):
+        with open(self.module._events_log_path(), "r", encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle if line.strip()]
 
 
 if __name__ == "__main__":
