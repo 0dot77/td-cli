@@ -250,6 +250,18 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 		}
 		return commands.Watch(c, path, interval, jsonOutput)
 
+	case "chop":
+		return runChop(c, args, jsonOutput)
+
+	case "sop":
+		return runSop(c, args, jsonOutput)
+
+	case "pop":
+		return runPop(c, args, jsonOutput)
+
+	case "table":
+		return runTable(c, args, jsonOutput)
+
 	default:
 		return fmt.Errorf("unknown command: %s\nRun 'td-cli help' for usage", command)
 	}
@@ -968,6 +980,251 @@ func runShaders(args []string, jsonOutput bool, port int, project string, timeou
 
 	default:
 		return fmt.Errorf("unknown shaders subcommand: %s (use list, get, apply)", sub)
+	}
+}
+
+func runChop(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli chop <info|channels|sample> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli chop info <path>")
+		}
+		return commands.ChopInfo(c, args[0], jsonOutput)
+	case "channels":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli chop channels <path> [--start N] [--count N]")
+		}
+		start, count := 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.ChopChannels(c, args[0], start, count, jsonOutput)
+	case "sample":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli chop sample <path> [--channel <name>] [--index N]")
+		}
+		channel := ""
+		index := 0
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--channel" && i+1 < len(args) {
+				channel = args[i+1]
+				i++
+			} else if args[i] == "--index" && i+1 < len(args) {
+				index, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.ChopSample(c, args[0], channel, index, jsonOutput)
+	default:
+		return fmt.Errorf("unknown chop subcommand: %s (use info, channels, sample)", sub)
+	}
+}
+
+func runSop(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli sop <info|points|attribs> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli sop info <path>")
+		}
+		return commands.SopInfo(c, args[0], jsonOutput)
+	case "points":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli sop points <path> [--start N] [--limit N]")
+		}
+		start, limit := 0, 100
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.SopPoints(c, args[0], start, limit, jsonOutput)
+	case "attribs":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli sop attribs <path>")
+		}
+		return commands.SopAttribs(c, args[0], jsonOutput)
+	default:
+		return fmt.Errorf("unknown sop subcommand: %s (use info, points, attribs)", sub)
+	}
+}
+
+func runPop(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli pop <info|points|prims|verts|bounds|attributes|save> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop info <path>")
+		}
+		return commands.PopInfo(c, args[0], jsonOutput)
+	case "points":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop points <path> [--attr P] [--start 0] [--count 100]")
+		}
+		attr, start, count := "P", 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--attr" && i+1 < len(args) {
+				attr = args[i+1]
+				i++
+			} else if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.PopPoints(c, args[0], attr, start, count, jsonOutput)
+	case "prims":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop prims <path> [--attr N] [--start 0] [--count 100]")
+		}
+		attr, start, count := "N", 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--attr" && i+1 < len(args) {
+				attr = args[i+1]
+				i++
+			} else if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.PopPrims(c, args[0], attr, start, count, jsonOutput)
+	case "verts":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop verts <path> [--attr uv] [--start 0] [--count 100]")
+		}
+		attr, start, count := "uv", 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--attr" && i+1 < len(args) {
+				attr = args[i+1]
+				i++
+			} else if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.PopVerts(c, args[0], attr, start, count, jsonOutput)
+	case "bounds":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop bounds <path>")
+		}
+		return commands.PopBounds(c, args[0], jsonOutput)
+	case "attributes":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop attributes <path>")
+		}
+		return commands.PopAttributes(c, args[0], jsonOutput)
+	case "save":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop save <path> [-o file]")
+		}
+		filepath := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "-o" && i+1 < len(args) {
+				filepath = args[i+1]
+				i++
+			}
+		}
+		return commands.PopSave(c, args[0], filepath, jsonOutput)
+	default:
+		return fmt.Errorf("unknown pop subcommand: %s (use info, points, prims, verts, bounds, attributes, save)", sub)
+	}
+}
+
+func runTable(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli table <rows|cell|append|delete> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "rows":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table rows <path> [--start N] [--end N]")
+		}
+		start, end := 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--end" && i+1 < len(args) {
+				end, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.TableRows(c, args[0], start, end, jsonOutput)
+	case "cell":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table cell <path> <row> <col> [--value V]")
+		}
+		row, col, value := commands.ParseTableCoords(args[1:])
+		return commands.TableCell(c, args[0], row, col, value, jsonOutput)
+	case "append":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table append <path> [--row|--col] [--values v1,v2]")
+		}
+		mode := "row"
+		var values []string
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--col" {
+				mode = "col"
+			} else if args[i] == "--row" {
+				mode = "row"
+			} else if args[i] == "--values" && i+1 < len(args) {
+				values = strings.Split(args[i+1], ",")
+				i++
+			}
+		}
+		return commands.TableAppend(c, args[0], mode, values, jsonOutput)
+	case "delete":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table delete <path> [--row|--col] [--index N]")
+		}
+		mode := "row"
+		index := -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--col" {
+				mode = "col"
+			} else if args[i] == "--row" {
+				mode = "row"
+			} else if args[i] == "--index" && i+1 < len(args) {
+				index, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.TableDelete(c, args[0], mode, index, jsonOutput)
+	default:
+		return fmt.Errorf("unknown table subcommand: %s (use rows, cell, append, delete)", sub)
 	}
 }
 

@@ -56,6 +56,23 @@ def handle_request(uri, body):
         "/tox/export": handle_tox_export,
         "/tox/import": handle_tox_import,
         "/tools/list": handle_tools_list,
+        "/chop/info": handle_chop_info,
+        "/chop/channels": handle_chop_channels,
+        "/chop/sample": handle_chop_sample,
+        "/sop/info": handle_sop_info,
+        "/sop/points": handle_sop_points,
+        "/sop/attribs": handle_sop_attribs,
+        "/pop/info": handle_pop_info,
+        "/pop/points": handle_pop_points,
+        "/pop/prims": handle_pop_prims,
+        "/pop/verts": handle_pop_verts,
+        "/pop/bounds": handle_pop_bounds,
+        "/pop/attributes": handle_pop_attributes,
+        "/pop/save": handle_pop_save,
+        "/table/rows": handle_table_rows,
+        "/table/cell": handle_table_cell,
+        "/table/append": handle_table_append,
+        "/table/delete": handle_table_delete,
     }
 
     handler = routes.get(uri)
@@ -1922,6 +1939,473 @@ def handle_tox_import(body):
         return _error(f"Import failed: {e}")
 
 
+# --- CHOP ---
+
+
+def handle_chop_info(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if target.family != "CHOP":
+        return _error(f"{path} is not a CHOP")
+    chans = []
+    for i in range(target.numChans):
+        c = target[i]
+        chans.append({"name": c.name, "length": len(c.vals)})
+    return _success(
+        "CHOP info",
+        {
+            "path": path,
+            "name": target.name,
+            "type": target.type,
+            "numChannels": target.numChans,
+            "numSamples": target.numSamples,
+            "sampleRate": target.rate,
+            "channels": chans,
+        },
+    )
+
+
+def handle_chop_channels(body):
+    path = body.get("path", "")
+    start = body.get("start", 0)
+    count = body.get("count", -1)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if target.family != "CHOP":
+        return _error(f"{path} is not a CHOP")
+    channels = []
+    for i in range(target.numChans):
+        c = target[i]
+        vals = list(c.vals)
+        if count > 0:
+            vals = vals[start : start + count]
+        elif start > 0:
+            vals = vals[start:]
+        channels.append({"name": c.name, "values": vals})
+    return _success(f"{len(channels)} channels", {"channels": channels})
+
+
+def handle_chop_sample(body):
+    path = body.get("path", "")
+    channel_name = body.get("channel", "")
+    index = body.get("index", 0)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if target.family != "CHOP":
+        return _error(f"{path} is not a CHOP")
+    chan = target[channel_name] if channel_name else target[0]
+    if chan is None:
+        return _error(f"Channel not found: {channel_name}")
+    vals = list(chan.vals)
+    if index < 0 or index >= len(vals):
+        return _error(f"Index {index} out of range (0-{len(vals) - 1})")
+    return _success(
+        f"Sample {index}",
+        {
+            "channel": chan.name,
+            "index": index,
+            "value": vals[index],
+        },
+    )
+
+
+# --- SOP ---
+
+
+def handle_sop_info(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if target.family != "SOP":
+        return _error(f"{path} is not a SOP")
+    return _success(
+        "SOP info",
+        {
+            "path": path,
+            "name": target.name,
+            "type": target.type,
+            "numPoints": target.numPoints,
+            "numPrims": target.numPrims,
+            "numVerts": target.numVertices,
+        },
+    )
+
+
+def handle_sop_points(body):
+    path = body.get("path", "")
+    start = body.get("start", 0)
+    limit = body.get("limit", 100)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if target.family != "SOP":
+        return _error(f"{path} is not a SOP")
+    points = []
+    end = min(start + limit, target.numPoints)
+    for i in range(start, end):
+        p = target.points[i]
+        points.append(
+            {
+                "index": i,
+                "x": p.x,
+                "y": p.y,
+                "z": p.z,
+            }
+        )
+    return _success(
+        f"{len(points)} points",
+        {
+            "totalPoints": target.numPoints,
+            "start": start,
+            "count": len(points),
+            "points": points,
+        },
+    )
+
+
+def handle_sop_attribs(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if target.family != "SOP":
+        return _error(f"{path} is not a SOP")
+    point_attrs = (
+        [a.name for a in target.pointAttribs] if hasattr(target, "pointAttribs") else []
+    )
+    prim_attrs = (
+        [a.name for a in target.primAttribs] if hasattr(target, "primAttribs") else []
+    )
+    vert_attrs = (
+        [a.name for a in target.vertAttribs] if hasattr(target, "vertAttribs") else []
+    )
+    return _success(
+        "SOP attributes",
+        {
+            "pointAttributes": point_attrs,
+            "primitiveAttributes": prim_attrs,
+            "vertexAttributes": vert_attrs,
+        },
+    )
+
+
+# --- POP ---
+
+
+def _get_pop(target):
+    if hasattr(target, "numPoints") and hasattr(target, "points"):
+        pop_attr = getattr(target, "pointAttributes", None)
+        if pop_attr is not None:
+            return True
+    return False
+
+
+def handle_pop_info(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    try:
+        num_pts = target.numPoints()
+    except Exception:
+        return _error(f"{path} is not a POP or does not support POP methods")
+    try:
+        num_prims = target.numPrims()
+    except Exception:
+        num_prims = 0
+    try:
+        num_verts = target.numVerts()
+    except Exception:
+        num_verts = 0
+    dim = str(target.dimension) if hasattr(target, "dimension") else ""
+    pt_attrs = (
+        list(target.pointAttributes) if hasattr(target, "pointAttributes") else []
+    )
+    pr_attrs = list(target.primAttributes) if hasattr(target, "primAttributes") else []
+    vt_attrs = list(target.vertAttributes) if hasattr(target, "vertAttributes") else []
+    return _success(
+        "POP info",
+        {
+            "path": path,
+            "name": target.name,
+            "type": target.type,
+            "numPoints": num_pts,
+            "numPrims": num_prims,
+            "numVerts": num_verts,
+            "dimension": dim,
+            "pointAttributes": [str(a) for a in pt_attrs],
+            "primAttributes": [str(a) for a in pr_attrs],
+            "vertAttributes": [str(a) for a in vt_attrs],
+        },
+    )
+
+
+def handle_pop_points(body):
+    path = body.get("path", "")
+    attr = body.get("attribute", "P")
+    start = body.get("start", 0)
+    count = body.get("count", -1)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    try:
+        vals = target.points(attr, startIndex=start, count=count)
+    except Exception as e:
+        return _error(f"Failed to read POP points: {e}")
+    return _success(
+        f"POP points ({attr})",
+        {
+            "attribute": attr,
+            "start": start,
+            "count": len(vals) if isinstance(vals, list) else -1,
+            "values": list(vals) if isinstance(vals, (list, tuple)) else str(vals),
+        },
+    )
+
+
+def handle_pop_prims(body):
+    path = body.get("path", "")
+    attr = body.get("attribute", "N")
+    start = body.get("start", 0)
+    count = body.get("count", -1)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    try:
+        vals = target.prims(attr, startIndex=start, count=count)
+    except Exception as e:
+        return _error(f"Failed to read POP prims: {e}")
+    return _success(
+        f"POP prims ({attr})",
+        {
+            "attribute": attr,
+            "start": start,
+            "count": len(vals) if isinstance(vals, list) else -1,
+            "values": list(vals) if isinstance(vals, (list, tuple)) else str(vals),
+        },
+    )
+
+
+def handle_pop_verts(body):
+    path = body.get("path", "")
+    attr = body.get("attribute", "uv")
+    start = body.get("start", 0)
+    count = body.get("count", -1)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    try:
+        vals = target.verts(attr, startIndex=start, count=count)
+    except Exception as e:
+        return _error(f"Failed to read POP verts: {e}")
+    return _success(
+        f"POP verts ({attr})",
+        {
+            "attribute": attr,
+            "start": start,
+            "count": len(vals) if isinstance(vals, list) else -1,
+            "values": list(vals) if isinstance(vals, (list, tuple)) else str(vals),
+        },
+    )
+
+
+def handle_pop_bounds(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    try:
+        b = target.bounds()
+    except Exception as e:
+        return _error(f"Failed to get POP bounds: {e}")
+    return _success(
+        "POP bounds",
+        {
+            "minX": b.minX,
+            "minY": b.minY,
+            "minZ": b.minZ,
+            "maxX": b.maxX,
+            "maxY": b.maxY,
+            "maxZ": b.maxZ,
+            "centerX": b.centerX,
+            "centerY": b.centerY,
+            "centerZ": b.centerZ,
+            "sizeX": b.sizeX,
+            "sizeY": b.sizeY,
+            "sizeZ": b.sizeZ,
+        },
+    )
+
+
+def handle_pop_attributes(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    pt_attrs = (
+        list(target.pointAttributes) if hasattr(target, "pointAttributes") else []
+    )
+    pr_attrs = list(target.primAttributes) if hasattr(target, "primAttributes") else []
+    vt_attrs = list(target.vertAttributes) if hasattr(target, "vertAttributes") else []
+    return _success(
+        "POP attributes",
+        {
+            "pointAttributes": [str(a) for a in pt_attrs],
+            "primAttributes": [str(a) for a in pr_attrs],
+            "vertAttributes": [str(a) for a in vt_attrs],
+        },
+    )
+
+
+def handle_pop_save(body):
+    path = body.get("path", "")
+    filepath = body.get("filepath", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    try:
+        saved = target.save(filepath) if filepath else target.save()
+    except Exception as e:
+        return _error(f"Failed to save POP: {e}")
+    return _success("POP saved", {"filepath": str(saved)})
+
+
+# --- Table DAT ---
+
+
+def handle_table_rows(body):
+    path = body.get("path", "")
+    start = body.get("start", 0)
+    end = body.get("end", -1)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if not target.isTable:
+        return _error(f"{path} is not a Table DAT")
+    last = target.numRows if end < 0 else min(end, target.numRows)
+    rows = []
+    for r in range(start, last):
+        row = []
+        for c in range(target.numCols):
+            row.append(str(target[r, c]))
+        rows.append(row)
+    return _success(
+        f"{len(rows)} rows",
+        {
+            "numRows": target.numRows,
+            "numCols": target.numCols,
+            "rows": rows,
+        },
+    )
+
+
+def handle_table_cell(body):
+    path = body.get("path", "")
+    row = body.get("row", 0)
+    col = body.get("col", 0)
+    value = body.get("value", None)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if not target.isTable:
+        return _error(f"{path} is not a Table DAT")
+    if value is not None:
+        target[row, col] = value
+    return _success(
+        f"Cell [{row},{col}]",
+        {
+            "row": row,
+            "col": col,
+            "value": str(target[row, col]),
+        },
+    )
+
+
+def handle_table_append(body):
+    path = body.get("path", "")
+    mode = body.get("mode", "row")
+    values = body.get("values", [])
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if not target.isTable:
+        return _error(f"{path} is not a Table DAT")
+    if mode == "row":
+        if values:
+            target.appendRow(values)
+        else:
+            target.appendRow([""] * target.numCols)
+        return _success("Row appended", {"numRows": target.numRows})
+    elif mode == "col":
+        if values:
+            target.appendCol(values)
+        else:
+            target.appendCol([""] * target.numRows)
+        return _success("Col appended", {"numCols": target.numCols})
+    else:
+        return _error(f"Unknown mode: {mode} (use row or col)")
+
+
+def handle_table_delete(body):
+    path = body.get("path", "")
+    mode = body.get("mode", "row")
+    index = body.get("index", -1)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if not target.isTable:
+        return _error(f"{path} is not a Table DAT")
+    if index < 0:
+        index = (target.numRows if mode == "row" else target.numCols) - 1
+    if mode == "row":
+        target.deleteRow(index)
+        return _success(f"Row {index} deleted", {"numRows": target.numRows})
+    elif mode == "col":
+        target.deleteCol(index)
+        return _success(f"Col {index} deleted", {"numCols": target.numCols})
+    else:
+        return _error(f"Unknown mode: {mode} (use row or col)")
+
+
 # --- tools ---
 
 # Tool schema registry: each entry describes a route's purpose and parameters.
@@ -2600,6 +3084,377 @@ TOOL_SCHEMAS = [
                 "type": "string",
                 "required": False,
                 "description": "Rename the imported COMP",
+            },
+        ],
+    },
+    {
+        "name": "chop/info",
+        "route": "/chop/info",
+        "description": "Get CHOP info (channel count, sample rate, sample count)",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "CHOP operator path",
+            },
+        ],
+    },
+    {
+        "name": "chop/channels",
+        "route": "/chop/channels",
+        "description": "Read all CHOP channel values",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "CHOP operator path",
+            },
+            {
+                "name": "start",
+                "type": "integer",
+                "required": False,
+                "description": "Start sample index",
+            },
+            {
+                "name": "count",
+                "type": "integer",
+                "required": False,
+                "description": "Number of samples (-1 for all)",
+            },
+        ],
+    },
+    {
+        "name": "chop/sample",
+        "route": "/chop/sample",
+        "description": "Read a specific sample from a CHOP channel",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "CHOP operator path",
+            },
+            {
+                "name": "channel",
+                "type": "string",
+                "required": False,
+                "description": "Channel name",
+            },
+            {
+                "name": "index",
+                "type": "integer",
+                "required": False,
+                "description": "Sample index",
+            },
+        ],
+    },
+    {
+        "name": "sop/info",
+        "route": "/sop/info",
+        "description": "Get SOP info (point/prim/vert counts)",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "SOP operator path",
+            },
+        ],
+    },
+    {
+        "name": "sop/points",
+        "route": "/sop/points",
+        "description": "Read SOP point positions (paginated)",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "SOP operator path",
+            },
+            {
+                "name": "start",
+                "type": "integer",
+                "required": False,
+                "description": "Start index (default: 0)",
+            },
+            {
+                "name": "limit",
+                "type": "integer",
+                "required": False,
+                "description": "Max points (default: 100)",
+            },
+        ],
+    },
+    {
+        "name": "sop/attribs",
+        "route": "/sop/attribs",
+        "description": "List SOP point/prim/vert attributes",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "SOP operator path",
+            },
+        ],
+    },
+    {
+        "name": "pop/info",
+        "route": "/pop/info",
+        "description": "Get POP info (GPU geometry: point/prim/vert counts, dimension, attributes)",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "POP operator path",
+            },
+        ],
+    },
+    {
+        "name": "pop/points",
+        "route": "/pop/points",
+        "description": "Read POP point attribute values (paginated)",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "POP operator path",
+            },
+            {
+                "name": "attribute",
+                "type": "string",
+                "required": False,
+                "description": "Attribute name (default: P)",
+            },
+            {
+                "name": "start",
+                "type": "integer",
+                "required": False,
+                "description": "Start index (default: 0)",
+            },
+            {
+                "name": "count",
+                "type": "integer",
+                "required": False,
+                "description": "Number of points (-1 for all)",
+            },
+        ],
+    },
+    {
+        "name": "pop/prims",
+        "route": "/pop/prims",
+        "description": "Read POP primitive attribute values",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "POP operator path",
+            },
+            {
+                "name": "attribute",
+                "type": "string",
+                "required": False,
+                "description": "Attribute name (default: N)",
+            },
+            {
+                "name": "start",
+                "type": "integer",
+                "required": False,
+                "description": "Start index",
+            },
+            {
+                "name": "count",
+                "type": "integer",
+                "required": False,
+                "description": "Number of prims (-1 for all)",
+            },
+        ],
+    },
+    {
+        "name": "pop/verts",
+        "route": "/pop/verts",
+        "description": "Read POP vertex attribute values",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "POP operator path",
+            },
+            {
+                "name": "attribute",
+                "type": "string",
+                "required": False,
+                "description": "Attribute name (default: uv)",
+            },
+            {
+                "name": "start",
+                "type": "integer",
+                "required": False,
+                "description": "Start index",
+            },
+            {
+                "name": "count",
+                "type": "integer",
+                "required": False,
+                "description": "Number of verts (-1 for all)",
+            },
+        ],
+    },
+    {
+        "name": "pop/bounds",
+        "route": "/pop/bounds",
+        "description": "Get POP bounding box (min, max, center, size)",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "POP operator path",
+            },
+        ],
+    },
+    {
+        "name": "pop/attributes",
+        "route": "/pop/attributes",
+        "description": "List POP point/prim/vert attribute names",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "POP operator path",
+            },
+        ],
+    },
+    {
+        "name": "pop/save",
+        "route": "/pop/save",
+        "description": "Save POP geometry to file",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "POP operator path",
+            },
+            {
+                "name": "filepath",
+                "type": "string",
+                "required": False,
+                "description": "Output file path",
+            },
+        ],
+    },
+    {
+        "name": "table/rows",
+        "route": "/table/rows",
+        "description": "Read Table DAT rows",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Table DAT path",
+            },
+            {
+                "name": "start",
+                "type": "integer",
+                "required": False,
+                "description": "Start row (default: 0)",
+            },
+            {
+                "name": "end",
+                "type": "integer",
+                "required": False,
+                "description": "End row (-1 for all)",
+            },
+        ],
+    },
+    {
+        "name": "table/cell",
+        "route": "/table/cell",
+        "description": "Get or set a Table DAT cell value",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Table DAT path",
+            },
+            {
+                "name": "row",
+                "type": "integer",
+                "required": False,
+                "description": "Row index",
+            },
+            {
+                "name": "col",
+                "type": "integer",
+                "required": False,
+                "description": "Column index",
+            },
+            {
+                "name": "value",
+                "type": "string",
+                "required": False,
+                "description": "Set value (get if omitted)",
+            },
+        ],
+    },
+    {
+        "name": "table/append",
+        "route": "/table/append",
+        "description": "Append a row or column to a Table DAT",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Table DAT path",
+            },
+            {
+                "name": "mode",
+                "type": "string",
+                "required": False,
+                "description": "row or col (default: row)",
+            },
+            {
+                "name": "values",
+                "type": "array",
+                "required": False,
+                "description": "Cell values for new row/col",
+            },
+        ],
+    },
+    {
+        "name": "table/delete",
+        "route": "/table/delete",
+        "description": "Delete a row or column from a Table DAT",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Table DAT path",
+            },
+            {
+                "name": "mode",
+                "type": "string",
+                "required": False,
+                "description": "row or col (default: row)",
+            },
+            {
+                "name": "index",
+                "type": "integer",
+                "required": False,
+                "description": "Index (last if omitted)",
             },
         ],
     },
