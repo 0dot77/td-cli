@@ -38,225 +38,154 @@ type HealthData struct {
 }
 
 // HarnessCapabilitiesRequest requests the active harness capabilities surface.
-type HarnessCapabilitiesRequest struct {
-	Scope     string   `json:"scope,omitempty"`
-	Goal      string   `json:"goal,omitempty"`
-	Include   []string `json:"include,omitempty"`
-	RequestID string   `json:"requestId,omitempty"`
-}
+type HarnessCapabilitiesRequest struct{}
 
 // HarnessObserveRequest requests an agent-oriented observation snapshot.
 type HarnessObserveRequest struct {
-	Scope     string   `json:"scope,omitempty"`
-	Goal      string   `json:"goal,omitempty"`
-	Depth     int      `json:"depth,omitempty"`
-	Include   []string `json:"include,omitempty"`
-	RequestID string   `json:"requestId,omitempty"`
+	Path            string `json:"path,omitempty"`
+	Depth           int    `json:"depth,omitempty"`
+	IncludeSnapshot bool   `json:"includeSnapshot,omitempty"`
 }
 
-// HarnessCheck describes a verification assertion for the harness.
-type HarnessCheck struct {
-	Name     string `json:"name,omitempty"`
-	Kind     string `json:"kind,omitempty"`
-	Target   string `json:"target,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Param    string `json:"param,omitempty"`
-	Expected string `json:"expected,omitempty"`
+// HarnessAssertion describes one verification assertion.
+type HarnessAssertion struct {
+	Kind     string        `json:"kind,omitempty"`
+	Name     string        `json:"name,omitempty"`
+	Path     string        `json:"path,omitempty"`
+	Equals   interface{}   `json:"equals,omitempty"`
+	Min      interface{}   `json:"min,omitempty"`
+	Max      interface{}   `json:"max,omitempty"`
+	Contains string        `json:"contains,omitempty"`
+	OneOf    []interface{} `json:"oneOf,omitempty"`
 }
 
 // HarnessVerifyRequest requests harness verification over a scope.
 type HarnessVerifyRequest struct {
-	Scope     string         `json:"scope,omitempty"`
-	Goal      string         `json:"goal,omitempty"`
-	Checks    []HarnessCheck `json:"checks,omitempty"`
-	RequestID string         `json:"requestId,omitempty"`
+	Path               string             `json:"path,omitempty"`
+	Depth              int                `json:"depth,omitempty"`
+	IncludeObservation bool               `json:"includeObservation,omitempty"`
+	Assertions         []HarnessAssertion `json:"assertions,omitempty"`
 }
 
-// HarnessOperation describes a planned or applied harness operation.
+// HarnessOperation describes a routed harness operation.
 type HarnessOperation struct {
-	Action  string                 `json:"action,omitempty"`
-	Target  string                 `json:"target,omitempty"`
-	Path    string                 `json:"path,omitempty"`
-	Family  string                 `json:"family,omitempty"`
-	Params  map[string]interface{} `json:"params,omitempty"`
-	Summary string                 `json:"summary,omitempty"`
+	Route string                 `json:"route,omitempty"`
+	Body  map[string]interface{} `json:"body,omitempty"`
 }
 
 // HarnessApplyRequest requests a patch/apply step.
 type HarnessApplyRequest struct {
-	Scope      string             `json:"scope,omitempty"`
-	Goal       string             `json:"goal,omitempty"`
-	DryRun     bool               `json:"dryRun,omitempty"`
-	Operations []HarnessOperation `json:"operations,omitempty"`
-	RequestID  string             `json:"requestId,omitempty"`
+	TargetPath    string             `json:"targetPath,omitempty"`
+	Goal          string             `json:"goal,omitempty"`
+	Note          string             `json:"note,omitempty"`
+	Iteration     int                `json:"iteration,omitempty"`
+	SnapshotDepth int                `json:"snapshotDepth,omitempty"`
+	StopOnError   bool               `json:"stopOnError,omitempty"`
+	Operations    []HarnessOperation `json:"operations,omitempty"`
 }
 
 // HarnessRollbackRequest requests rollback of a prior harness change.
 type HarnessRollbackRequest struct {
-	Handle    string `json:"handle,omitempty"`
-	RequestID string `json:"requestId,omitempty"`
-	Reason    string `json:"reason,omitempty"`
+	ID string `json:"id,omitempty"`
 }
 
 // HarnessHistoryRequest requests recent harness activity.
 type HarnessHistoryRequest struct {
-	Scope     string `json:"scope,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
-	Cursor    string `json:"cursor,omitempty"`
-	RequestID string `json:"requestId,omitempty"`
-}
-
-// HarnessTarget identifies an output, viewer, or other important node.
-type HarnessTarget struct {
-	Label  string `json:"label,omitempty"`
-	Path   string `json:"path,omitempty"`
-	Type   string `json:"type,omitempty"`
-	Family string `json:"family,omitempty"`
-	Role   string `json:"role,omitempty"`
-	Active bool   `json:"active,omitempty"`
-}
-
-// HarnessMetric captures a summarized metric or hotspot.
-type HarnessMetric struct {
-	Name     string  `json:"name,omitempty"`
-	Value    float64 `json:"value,omitempty"`
-	Unit     string  `json:"unit,omitempty"`
-	Severity string  `json:"severity,omitempty"`
-	Target   string  `json:"target,omitempty"`
-	Summary  string  `json:"summary,omitempty"`
-}
-
-// HarnessChange summarizes a single harness change.
-type HarnessChange struct {
-	Action  string `json:"action,omitempty"`
-	Target  string `json:"target,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Family  string `json:"family,omitempty"`
-	Summary string `json:"summary,omitempty"`
-}
-
-// HarnessCheckpoint points to a reversible checkpoint created by the harness.
-type HarnessCheckpoint struct {
-	ID        string  `json:"id,omitempty"`
-	Handle    string  `json:"handle,omitempty"`
-	CreatedAt float64 `json:"createdAt,omitempty"`
-	Summary   string  `json:"summary,omitempty"`
-}
-
-// HarnessCheckResult reports the outcome of one verification check.
-type HarnessCheckResult struct {
-	Name    string `json:"name,omitempty"`
-	Kind    string `json:"kind,omitempty"`
-	Target  string `json:"target,omitempty"`
-	Status  string `json:"status,omitempty"`
-	Message string `json:"message,omitempty"`
-	Passed  bool   `json:"passed,omitempty"`
-}
-
-// HarnessEvidence captures evidence emitted during observe/verify/apply.
-type HarnessEvidence struct {
-	Kind    string `json:"kind,omitempty"`
-	Label   string `json:"label,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Value   string `json:"value,omitempty"`
-	Summary string `json:"summary,omitempty"`
+	TargetPath string `json:"targetPath,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
 }
 
 // HarnessCapabilitiesData describes the available harness surface.
 type HarnessCapabilitiesData struct {
-	Project           string   `json:"project,omitempty"`
-	TDVersion         string   `json:"tdVersion,omitempty"`
-	TDBuild           string   `json:"tdBuild,omitempty"`
-	ConnectorName     string   `json:"connectorName,omitempty"`
-	ConnectorVersion  string   `json:"connectorVersion,omitempty"`
-	ProtocolVersion   int      `json:"protocolVersion,omitempty"`
-	SupportedRoutes   []string `json:"supportedRoutes,omitempty"`
-	SupportedFamilies []string `json:"supportedFamilies,omitempty"`
-	Features          []string `json:"features,omitempty"`
-	Constraints       []string `json:"constraints,omitempty"`
-	Notes             []string `json:"notes,omitempty"`
-	Warnings          []string `json:"warnings,omitempty"`
+	Connector struct {
+		Name            string `json:"name,omitempty"`
+		Version         string `json:"version,omitempty"`
+		ProtocolVersion int    `json:"protocolVersion,omitempty"`
+		InstallMode     string `json:"installMode,omitempty"`
+	} `json:"connector,omitempty"`
+	Runtime struct {
+		ProjectName string `json:"projectName,omitempty"`
+		ProjectPath string `json:"projectPath,omitempty"`
+		TDVersion   string `json:"tdVersion,omitempty"`
+		TDBuild     string `json:"tdBuild,omitempty"`
+		HarnessRoot string `json:"harnessRoot,omitempty"`
+	} `json:"runtime,omitempty"`
+	Tools struct {
+		Count      int            `json:"count,omitempty"`
+		Routes     []string       `json:"routes,omitempty"`
+		Namespaces map[string]int `json:"namespaces,omitempty"`
+	} `json:"tools,omitempty"`
+	Support struct {
+		Families    map[string][]string `json:"families,omitempty"`
+		Rollback    bool                `json:"rollback,omitempty"`
+		History     bool                `json:"history,omitempty"`
+		Observe     bool                `json:"observe,omitempty"`
+		Verify      bool                `json:"verify,omitempty"`
+		BatchRoutes []string            `json:"batchRoutes,omitempty"`
+	} `json:"support,omitempty"`
 }
 
-// HarnessObserveData describes the current state for the harness loop.
+type HarnessGraphSummary struct {
+	NodeCount       int            `json:"nodeCount,omitempty"`
+	ConnectionCount int            `json:"connectionCount,omitempty"`
+	Families        map[string]int `json:"families,omitempty"`
+	DataFlow        []string       `json:"dataFlow,omitempty"`
+}
+
 type HarnessObserveData struct {
-	Scope          string             `json:"scope,omitempty"`
-	Goal           string             `json:"goal,omitempty"`
-	Summary        string             `json:"summary,omitempty"`
-	RequestID      string             `json:"requestId,omitempty"`
-	RollbackHandle string             `json:"rollbackHandle,omitempty"`
-	Outputs        []HarnessTarget    `json:"outputs,omitempty"`
-	Viewers        []HarnessTarget    `json:"viewers,omitempty"`
-	Changes        []HarnessChange    `json:"changes,omitempty"`
-	Hotspots       []HarnessMetric    `json:"hotspots,omitempty"`
-	Warnings       []string           `json:"warnings,omitempty"`
-	Errors         []string           `json:"errors,omitempty"`
-	Checkpoint     *HarnessCheckpoint `json:"checkpoint,omitempty"`
+	Path            string                   `json:"path,omitempty"`
+	Outputs         []map[string]interface{} `json:"outputs,omitempty"`
+	RecentActivity  []map[string]interface{} `json:"recentActivity,omitempty"`
+	SnapshotSummary map[string]interface{}   `json:"snapshotSummary,omitempty"`
+	Graph           HarnessGraphSummary      `json:"graph,omitempty"`
+	Project         map[string]interface{}   `json:"project,omitempty"`
+	Target          map[string]interface{}   `json:"target,omitempty"`
+	Issues          map[string]interface{}   `json:"issues,omitempty"`
+	Performance     map[string]interface{}   `json:"performance,omitempty"`
 }
 
-// HarnessVerifyData reports the outcome of a verify step.
 type HarnessVerifyData struct {
-	Scope          string               `json:"scope,omitempty"`
-	Goal           string               `json:"goal,omitempty"`
-	Summary        string               `json:"summary,omitempty"`
-	RequestID      string               `json:"requestId,omitempty"`
-	RollbackHandle string               `json:"rollbackHandle,omitempty"`
-	Passed         bool                 `json:"passed,omitempty"`
-	Score          float64              `json:"score,omitempty"`
-	Checks         []HarnessCheckResult `json:"checks,omitempty"`
-	Evidence       []HarnessEvidence    `json:"evidence,omitempty"`
-	Warnings       []string             `json:"warnings,omitempty"`
-	Errors         []string             `json:"errors,omitempty"`
+	Path           string                   `json:"path,omitempty"`
+	Passed         bool                     `json:"passed,omitempty"`
+	AssertionCount int                      `json:"assertionCount,omitempty"`
+	PassedCount    int                      `json:"passedCount,omitempty"`
+	Evidence       map[string]interface{}   `json:"evidence,omitempty"`
+	Assertions     []map[string]interface{} `json:"assertions,omitempty"`
 }
 
-// HarnessApplyData reports the outcome of an apply step.
 type HarnessApplyData struct {
-	Scope          string             `json:"scope,omitempty"`
-	Goal           string             `json:"goal,omitempty"`
-	Summary        string             `json:"summary,omitempty"`
-	RequestID      string             `json:"requestId,omitempty"`
-	RollbackHandle string             `json:"rollbackHandle,omitempty"`
-	Applied        bool               `json:"applied,omitempty"`
-	DryRun         bool               `json:"dryRun,omitempty"`
-	Changes        []HarnessChange    `json:"changes,omitempty"`
-	Warnings       []string           `json:"warnings,omitempty"`
-	Errors         []string           `json:"errors,omitempty"`
-	Checkpoint     *HarnessCheckpoint `json:"checkpoint,omitempty"`
+	RollbackID    string                   `json:"rollbackId,omitempty"`
+	RecordPath    string                   `json:"recordPath,omitempty"`
+	TargetPath    string                   `json:"targetPath,omitempty"`
+	Status        string                   `json:"status,omitempty"`
+	BeforeSummary map[string]interface{}   `json:"beforeSummary,omitempty"`
+	AfterSummary  map[string]interface{}   `json:"afterSummary,omitempty"`
+	Results       []map[string]interface{} `json:"results,omitempty"`
 }
 
-// HarnessRollbackData reports the outcome of a rollback step.
 type HarnessRollbackData struct {
-	Scope     string   `json:"scope,omitempty"`
-	Summary   string   `json:"summary,omitempty"`
-	Handle    string   `json:"handle,omitempty"`
-	RequestID string   `json:"requestId,omitempty"`
-	Restored  bool     `json:"restored,omitempty"`
-	Warnings  []string `json:"warnings,omitempty"`
-	Errors    []string `json:"errors,omitempty"`
+	RollbackID string                 `json:"rollbackId,omitempty"`
+	RecordPath string                 `json:"recordPath,omitempty"`
+	Restored   bool                   `json:"restored,omitempty"`
+	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
-// HarnessHistoryEntry summarizes one prior harness request.
 type HarnessHistoryEntry struct {
-	Timestamp      float64  `json:"timestamp,omitempty"`
-	Route          string   `json:"route,omitempty"`
-	Scope          string   `json:"scope,omitempty"`
-	Goal           string   `json:"goal,omitempty"`
-	Summary        string   `json:"summary,omitempty"`
-	RequestID      string   `json:"requestId,omitempty"`
-	RollbackHandle string   `json:"rollbackHandle,omitempty"`
-	Success        bool     `json:"success,omitempty"`
-	DryRun         bool     `json:"dryRun,omitempty"`
-	Passed         bool     `json:"passed,omitempty"`
-	Applied        bool     `json:"applied,omitempty"`
-	Restored       bool     `json:"restored,omitempty"`
-	Warnings       []string `json:"warnings,omitempty"`
-	Errors         []string `json:"errors,omitempty"`
+	ID             string                 `json:"id,omitempty"`
+	CreatedAt      float64                `json:"createdAt,omitempty"`
+	UpdatedAt      float64                `json:"updatedAt,omitempty"`
+	Status         string                 `json:"status,omitempty"`
+	TargetPath     string                 `json:"targetPath,omitempty"`
+	Goal           string                 `json:"goal,omitempty"`
+	Iteration      interface{}            `json:"iteration,omitempty"`
+	OperationCount int                    `json:"operationCount,omitempty"`
+	FailureCount   int                    `json:"failureCount,omitempty"`
+	RecordPath     string                 `json:"recordPath,omitempty"`
+	RolledBackAt   interface{}            `json:"rolledBackAt,omitempty"`
+	BeforeSummary  map[string]interface{} `json:"beforeSummary,omitempty"`
+	AfterSummary   map[string]interface{} `json:"afterSummary,omitempty"`
 }
 
-// HarnessHistoryData returns recent harness activity for the current scope.
 type HarnessHistoryData struct {
-	Scope   string                `json:"scope,omitempty"`
-	Summary string                `json:"summary,omitempty"`
-	Cursor  string                `json:"cursor,omitempty"`
-	Entries []HarnessHistoryEntry `json:"entries,omitempty"`
+	Iterations []HarnessHistoryEntry `json:"iterations,omitempty"`
 }

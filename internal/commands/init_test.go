@@ -168,10 +168,10 @@ func TestClaudeMDContentIncludesHarnessPreview(t *testing.T) {
 
 	content := claudeMDContent(health, 9500)
 	for _, want := range []string{
-		"## Planned Harness Loop",
+		"## Harness Loop",
 		"td-cli harness capabilities",
-		"td-cli harness rollback run-123",
-		"Use `td-cli help` to confirm the exact subcommand shape once the harness surface lands.",
+		"td-cli harness apply /project1 --file patch.json",
+		"td-cli harness rollback 1712900000-harness",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("claudeMDContent() missing %q", want)
@@ -184,10 +184,10 @@ func TestAgentsMDContentIncludesHarnessPreview(t *testing.T) {
 
 	content := agentsMDContent(nil, 0)
 	for _, want := range []string{
-		"## Planned Harness Loop",
-		"td-cli harness observe /project1",
+		"## Harness Loop",
+		"td-cli harness observe /project1 --depth 2",
 		"td-cli harness history",
-		"Confirm the exact command shape with `td-cli help` once the harness subcommands exist.",
+		"td-cli harness rollback 1712900000-harness",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("agentsMDContent() missing %q", want)

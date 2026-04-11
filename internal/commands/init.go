@@ -121,22 +121,20 @@ func claudeMDContent(health *protocol.HealthData, port int) string {
 	}
 
 	harnessLoopSection := `
-## Planned Harness Loop
+## Harness Loop
 
-If this branch exposes the upcoming top-level ` + "`harness`" + ` command, prefer it for agentic observe/apply/verify loops instead of long ad-hoc ` + "`exec`" + ` blobs.
-
-Expected surface for upcoming branches:
+Use the top-level ` + "`harness`" + ` command for structured observe/apply/verify loops instead of large one-off ` + "`exec`" + ` blobs.
 
 ` + "```" + `bash
 td-cli harness capabilities
-td-cli harness observe /project1
-td-cli harness apply plan.json
-td-cli harness verify run-123
+td-cli harness observe /project1 --depth 2
+td-cli harness apply /project1 --file patch.json
+td-cli harness verify /project1 --assert '{"kind":"family","equals":"COMP"}'
 td-cli harness history
-td-cli harness rollback run-123
+td-cli harness rollback 1712900000-harness
 ` + "```" + `
 
-Use ` + "`td-cli help`" + ` to confirm the exact subcommand shape once the harness surface lands.
+Keep the harness scope below the connector boundary. Target ` + "`/project1/myScene`" + ` or another child COMP, not ` + "`/project1`" + `, for mutation and rollback.
 `
 
 	return `# TouchDesigner Project - Agent Integration
@@ -322,19 +320,19 @@ td-cli context    # Full project overview (connection + network summary)
 - Check status before mutations
 - The connector (TDCliServer) is not to be modified
 - Use td-cli exec for anything not covered by built-in commands
- - If the branch adds the planned harness surface, prefer the structured loop below over large one-off exec calls
+- Prefer the structured harness loop below over large one-off exec calls
 
-## Planned Harness Loop
+## Harness Loop
 ` + "```" + `bash
 td-cli harness capabilities
-td-cli harness observe /project1
-td-cli harness apply plan.json
-td-cli harness verify run-123
+td-cli harness observe /project1 --depth 2
+td-cli harness apply /project1 --file patch.json
+td-cli harness verify /project1 --assert '{"kind":"family","equals":"COMP"}'
 td-cli harness history
-td-cli harness rollback run-123
+td-cli harness rollback 1712900000-harness
 ` + "```" + `
 
-Confirm the exact command shape with ` + "`td-cli help`" + ` once the harness subcommands exist.
+하네스 수정/롤백 범위는 커넥터 경계 아래의 하위 COMP로 잡으세요. ` + "`/project1`" + ` 전체보다 ` + "`/project1/myScene`" + ` 같은 자식 COMP를 권장합니다.
 `
 }
 

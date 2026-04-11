@@ -502,6 +502,22 @@ def _snapshot_root_node(snapshot):
     return nodes[0] if nodes else {}
 
 
+def _contains_connector_boundary(target):
+    if target is None:
+        return False
+    if getattr(target, "name", "") == CONNECTOR_NAME:
+        return True
+    if getattr(target, "path", "") == "/" + CONNECTOR_NAME:
+        return True
+    if not getattr(target, "isCOMP", False):
+        return False
+    try:
+        children = target.findChildren(depth=1)
+    except Exception:
+        return False
+    return any(getattr(child, "name", "") == CONNECTOR_NAME for child in children)
+
+
 def _snapshot_target_state(target, depth=20):
     state = {
         "version": 1,
@@ -2520,7 +2536,13 @@ def handle_network_describe(body):
 
 def handle_harness_capabilities(body):
     """Report connector and harness capabilities for agent orchestration."""
-    tool_routes = sorted(schema.get("route", "") for schema in TOOL_SCHEMAS if schema.get("route"))
+    tool_routes = sorted(
+        {
+            schema.get("route", "")
+            for schema in TOOL_SCHEMAS
+            if schema.get("route", "")
+        }
+    )
     route_namespaces = {}
     for route in tool_routes:
         namespace = route.strip("/").split("/", 1)[0] if route.strip("/") else ""
@@ -2554,7 +2576,7 @@ def handle_harness_capabilities(body):
             "harnessRoot": _harness_root_dir(),
         },
         "tools": {
-            "count": len(TOOL_SCHEMAS),
+            "count": len(tool_routes),
             "routes": tool_routes,
             "namespaces": route_namespaces,
         },
@@ -2640,6 +2662,10 @@ def handle_harness_apply(body):
     target = op(target_path)
     if target is None:
         return _error(f"Target not found: {target_path}")
+    if _contains_connector_boundary(target):
+        return _error(
+            "Harness apply cannot target a scope that contains TDCliServer. Use a child COMP scope instead."
+        )
 
     blocked_routes = {"/harness/apply", "/harness/rollback"}
     for command in commands_list:

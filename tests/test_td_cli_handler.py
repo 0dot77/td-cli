@@ -199,6 +199,68 @@ class TDCliHandlerTests(unittest.TestCase):
         self.assertIsNone(result["data"]["result"])
         self.assertEqual(result["data"]["stdout"], "hello\n")
 
+    def test_handle_harness_capabilities_reports_routes(self):
+        result = self.module.handle_harness_capabilities({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["connector"]["name"], "TDCliServer")
+        self.assertIn("/harness/observe", result["data"]["tools"]["routes"])
+        self.assertTrue(result["data"]["support"]["rollback"])
+
+    def test_handle_harness_verify_reports_assertion_results(self):
+        target = FakeOp("/project1/out1", "out1", op_type="nullTOP", family="TOP")
+        target.isTOP = True
+        target.width = 1280
+        target.height = 720
+        self.module.op = {target.path: target}.get
+
+        result = self.module.handle_harness_verify(
+            {
+                "path": target.path,
+                "assertions": [
+                    {"kind": "family", "equals": "TOP"},
+                    {"kind": "type", "equals": "nullTOP"},
+                ],
+            }
+        )
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["data"]["passed"])
+        self.assertEqual(result["data"]["passedCount"], 2)
+
+    def test_handle_harness_apply_records_history(self):
+        root = FakeImportParent("/project1", "project1")
+        self.module.op = {root.path: root}.get
+        self.module.ROUTE_TABLE["/fake/noop"] = lambda body: self.module._success("noop", {"ok": True})
+
+        result = self.module.handle_harness_apply(
+            {
+                "targetPath": root.path,
+                "operations": [{"route": "/fake/noop", "body": {}}],
+            }
+        )
+
+        self.assertTrue(result["success"])
+        rollback_id = result["data"]["rollbackId"]
+
+        history = self.module.handle_harness_history({"limit": 5})
+        self.assertTrue(history["success"])
+        self.assertEqual(history["data"]["iterations"][0]["id"], rollback_id)
+
+    def test_handle_harness_apply_rejects_connector_scope(self):
+        root = FakeImportParent("/project1", "project1")
+        connector = FakeImportParent("/project1/TDCliServer", "TDCliServer")
+        connector._parent = root
+        root.children.append(connector)
+        self.module.op = {root.path: root, connector.path: connector}.get
+
+        result = self.module.handle_harness_apply(
+            {"targetPath": root.path, "operations": [{"route": "/fake/noop", "body": {}}]}
+        )
+
+        self.assertFalse(result["success"])
+        self.assertIn("contains TDCliServer", result["message"])
+
     def test_handle_connect_rejects_invalid_source_index(self):
         src = FakeOp("/src", "src")
         dst = FakeOp("/dst", "dst")

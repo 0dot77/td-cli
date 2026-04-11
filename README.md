@@ -112,24 +112,35 @@ This creates:
 - `/project1/popAudioVisual` with the audio CHOP chain, POP network, and TOP post-processing
 - `/project1/popAudioVisual_preview` as a preview container wired to the output TOP
 
-### Planned Harness Loop
+### Harness Loop
 
-The upcoming harness surface is intended for agentic iteration loops on top of the existing command set. It is not listed in the main command table yet because the CLI surface has not landed on this branch.
-
-Until that lands, the closest existing pieces are `td-cli tools list`, `td-cli watch`, `td-cli backup restore`, and `td-cli logs tail`.
-
-When that surface exists, the expected top-level command shape is:
+The harness surface is the structured loop for agentic TouchDesigner work: observe, apply, verify, inspect history, and roll back.
 
 ```powershell
 td-cli harness capabilities
-td-cli harness observe /project1
-td-cli harness apply plan.json
-td-cli harness verify run-123
+td-cli harness observe /project1 --depth 2
+td-cli harness apply /project1 --file patch.json
+td-cli harness verify /project1 --assert '{"kind":"family","equals":"COMP"}'
 td-cli harness history
-td-cli harness rollback run-123
+td-cli harness rollback 1712900000-harness
 ```
 
-Use `td-cli help` to confirm the exact subcommand names once the harness command is merged.
+`apply` expects JSON shaped like:
+
+```json
+{
+  "targetPath": "/project1",
+  "goal": "add preview chain",
+  "operations": [
+    {
+      "route": "/ops/create",
+      "body": { "type": "nullTOP", "parent": "/project1", "name": "out1" }
+    }
+  ]
+}
+```
+
+Important: do not target a scope that contains `TDCliServer`. Use a child COMP scope such as `/project1/myScene`, not `/project1`, for harness mutation and rollback.
 
 ### Beginner Install Guide
 
@@ -437,22 +448,35 @@ td-cli screenshot /project1/popAudioVisual/out -o pop-av.png
 
 ### 예정된 Harness 루프
 
-곧 들어올 harness 표면은 기존 저수준 명령 위에서 에이전트가 관측, 적용, 검증, 롤백 루프를 돌 수 있게 하는 용도입니다. 아직 이 브랜치의 실제 명령 표면에는 없으므로 주요 명령어 표에는 넣지 않았습니다.
+### Harness 루프
 
-그전까지는 `td-cli tools list`, `td-cli watch`, `td-cli backup restore`, `td-cli logs tail`이 가장 가까운 기존 표면입니다.
-
-표면이 들어오면 상위 명령은 아래 형태를 예상합니다.
+Harness 표면은 에이전트가 TouchDesigner에서 관측, 적용, 검증, 히스토리 조회, 롤백 루프를 구조적으로 돌릴 수 있게 하는 상위 명령입니다.
 
 ```powershell
 td-cli harness capabilities
-td-cli harness observe /project1
-td-cli harness apply plan.json
-td-cli harness verify run-123
+td-cli harness observe /project1 --depth 2
+td-cli harness apply /project1 --file patch.json
+td-cli harness verify /project1 --assert '{"kind":"family","equals":"COMP"}'
 td-cli harness history
-td-cli harness rollback run-123
+td-cli harness rollback 1712900000-harness
 ```
 
-실제 서브커맨드 이름은 머지 후 `td-cli help`로 다시 확인하세요.
+`apply`가 읽는 JSON 기본 형태는 아래와 같습니다.
+
+```json
+{
+  "targetPath": "/project1",
+  "goal": "add preview chain",
+  "operations": [
+    {
+      "route": "/ops/create",
+      "body": { "type": "nullTOP", "parent": "/project1", "name": "out1" }
+    }
+  ]
+}
+```
+
+중요: `TDCliServer`를 포함하는 스코프에는 `apply`를 직접 걸지 마세요. 하네스 수정/롤백 범위는 `/project1` 전체보다 `/project1/myScene` 같은 하위 COMP로 잡아야 합니다.
 
 ### 초심자용 설치 가이드
 

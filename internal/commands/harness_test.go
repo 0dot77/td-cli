@@ -11,21 +11,20 @@ import (
 )
 
 func TestRenderHarnessCapabilitiesIncludesCoreSections(t *testing.T) {
-	resp := &protocol.Response{
-		Success: true,
-		Data: mustMarshalJSON(t, protocol.HarnessCapabilitiesData{
-			Project:           "Example.toe",
-			TDVersion:         "2023.10000",
-			TDBuild:           "10000",
-			ConnectorName:     "TDCliServer",
-			ConnectorVersion:  "0.2.0",
-			ProtocolVersion:   1,
-			SupportedRoutes:   []string{"/harness/observe", "/harness/apply"},
-			SupportedFamilies: []string{"TOP", "POP"},
-			Features:          []string{"rollback", "history"},
-			Warnings:          []string{"experimental"},
-		}),
-	}
+	var data protocol.HarnessCapabilitiesData
+	data.Runtime.ProjectName = "Example.toe"
+	data.Runtime.TDVersion = "2023.10000"
+	data.Runtime.TDBuild = "10000"
+	data.Connector.Name = "TDCliServer"
+	data.Connector.Version = "0.2.0"
+	data.Connector.ProtocolVersion = 1
+	data.Tools.Routes = []string{"/harness/observe", "/harness/apply"}
+	data.Support.Families = map[string][]string{"TOP": {"media/*"}, "POP": {"pop/*"}}
+	data.Support.Observe = true
+	data.Support.Verify = true
+	data.Support.Rollback = true
+
+	resp := &protocol.Response{Success: true, Data: mustMarshalJSON(t, data)}
 
 	out := captureStdout(t, func() {
 		if err := renderHarnessCapabilities(resp); err != nil {
@@ -39,7 +38,6 @@ func TestRenderHarnessCapabilitiesIncludesCoreSections(t *testing.T) {
 		"Routes:",
 		"Families:",
 		"Features:",
-		"Warnings:",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
@@ -51,16 +49,13 @@ func TestRenderHarnessHistoryShowsEntryStatusAndDetails(t *testing.T) {
 	resp := &protocol.Response{
 		Success: true,
 		Data: mustMarshalJSON(t, protocol.HarnessHistoryData{
-			Scope: "/project1",
-			Entries: []protocol.HarnessHistoryEntry{
+			Iterations: []protocol.HarnessHistoryEntry{
 				{
-					Timestamp:      1712900000,
-					Route:          "/harness/apply",
-					Scope:          "/project1",
-					Goal:           "stabilize output",
-					RequestID:      "req-1",
-					RollbackHandle: "ckpt-1",
-					Applied:        true,
+					CreatedAt:  1712900000,
+					Status:     "applied",
+					TargetPath: "/project1",
+					Goal:       "stabilize output",
+					RecordPath: "/tmp/run.json",
 				},
 			},
 		}),
@@ -74,10 +69,10 @@ func TestRenderHarnessHistoryShowsEntryStatusAndDetails(t *testing.T) {
 
 	for _, want := range []string{
 		"Harness history",
-		"/harness/apply",
+		"/project1",
 		"APPLIED",
-		"request=req-1",
-		"rollback=ckpt-1",
+		"goal=stabilize output",
+		"record=/tmp/run.json",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
@@ -85,14 +80,10 @@ func TestRenderHarnessHistoryShowsEntryStatusAndDetails(t *testing.T) {
 	}
 }
 
-func TestHistoryStatusPrefersDryRun(t *testing.T) {
-	got := historyStatus(protocol.HarnessHistoryEntry{
-		Applied: true,
-		DryRun:  true,
-	})
-
-	if got != "DRY-RUN" {
-		t.Fatalf("historyStatus() = %q, want %q", got, "DRY-RUN")
+func TestHistoryStatusUsesUppercaseStatus(t *testing.T) {
+	got := historyStatus(protocol.HarnessHistoryEntry{Status: "rolled-back"})
+	if got != "ROLLED_BACK" {
+		t.Fatalf("historyStatus() = %q, want %q", got, "ROLLED_BACK")
 	}
 }
 

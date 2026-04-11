@@ -758,63 +758,62 @@ func runHarness(c *client.Client, args []string, jsonOutput bool) error {
 
 	switch sub {
 	case "capabilities":
-		req := protocol.HarnessCapabilitiesRequest{}
-		payload, err := buildHarnessPayload(req, args)
+		payload, err := buildHarnessPayload(protocol.HarnessCapabilitiesRequest{}, args)
 		if err != nil {
 			return err
 		}
 		return commands.HarnessCapabilities(c, payload, jsonOutput)
 
 	case "observe":
-		req, err := parseHarnessObserveArgs(args)
+		req, extra, err := parseHarnessObserveArgs(args)
 		if err != nil {
 			return err
 		}
-		payload, err := buildHarnessPayload(req.Request, req.RemainingArgs)
+		payload, err := buildHarnessPayload(req, extra)
 		if err != nil {
 			return err
 		}
 		return commands.HarnessObserve(c, payload, jsonOutput)
 
 	case "verify":
-		req, err := parseHarnessVerifyArgs(args)
+		req, extra, err := parseHarnessVerifyArgs(args)
 		if err != nil {
 			return err
 		}
-		payload, err := buildHarnessPayload(req.Request, req.RemainingArgs)
+		payload, err := buildHarnessPayload(req, extra)
 		if err != nil {
 			return err
 		}
 		return commands.HarnessVerify(c, payload, jsonOutput)
 
 	case "apply":
-		req, err := parseHarnessApplyArgs(args)
+		req, extra, err := parseHarnessApplyArgs(args)
 		if err != nil {
 			return err
 		}
-		payload, err := buildHarnessPayload(req.Request, req.RemainingArgs)
+		payload, err := buildHarnessPayload(req, extra)
 		if err != nil {
 			return err
 		}
 		return commands.HarnessApply(c, payload, jsonOutput)
 
 	case "rollback":
-		req, err := parseHarnessRollbackArgs(args)
+		req, extra, err := parseHarnessRollbackArgs(args)
 		if err != nil {
 			return err
 		}
-		payload, err := buildHarnessPayload(req.Request, req.RemainingArgs)
+		payload, err := buildHarnessPayload(req, extra)
 		if err != nil {
 			return err
 		}
 		return commands.HarnessRollback(c, payload, jsonOutput)
 
 	case "history":
-		req, err := parseHarnessHistoryArgs(args)
+		req, extra, err := parseHarnessHistoryArgs(args)
 		if err != nil {
 			return err
 		}
-		payload, err := buildHarnessPayload(req.Request, req.RemainingArgs)
+		payload, err := buildHarnessPayload(req, extra)
 		if err != nil {
 			return err
 		}
@@ -827,48 +826,6 @@ func runHarness(c *client.Client, args []string, jsonOutput bool) error {
 	default:
 		return fmt.Errorf("unknown harness subcommand: %s (use capabilities, observe, verify, apply, rollback, history)", sub)
 	}
-}
-
-func runDiff(args []string, jsonOutput bool, port int, project string, timeout time.Duration) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: td-cli diff <file1> <file2> | td-cli diff --live <snapshot> [path]")
-	}
-
-	// Check for --live mode
-	live := false
-	path := "/"
-	var fileArgs []string
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--live" {
-			live = true
-		} else if args[i] == "--path" && i+1 < len(args) {
-			path = args[i+1]
-			i++
-		} else {
-			fileArgs = append(fileArgs, args[i])
-		}
-	}
-
-	if live {
-		if len(fileArgs) < 1 {
-			return fmt.Errorf("usage: td-cli diff --live <snapshot.json> [path]")
-		}
-		if len(fileArgs) > 1 {
-			path = fileArgs[1]
-		}
-		// Only --live mode needs a TD connection
-		c, err := getClient(port, project, timeout)
-		if err != nil {
-			return err
-		}
-		return commands.DiffLive(c, fileArgs[0], path, jsonOutput)
-	}
-
-	// Offline file-to-file comparison — no TD needed
-	if len(fileArgs) < 2 {
-		return fmt.Errorf("usage: td-cli diff <file1> <file2>")
-	}
-	return commands.DiffFiles(fileArgs[0], fileArgs[1], jsonOutput)
 }
 
 func runDocs(args []string, jsonOutput bool) error {
@@ -1027,10 +984,10 @@ Commands:
   watch [path] [--interval ms]   Real-time performance monitor
   tools list                     Discover available tools (AI agent discovery)
   harness capabilities           Show harness routes and features
-  harness observe [scope]        Capture agent-oriented state snapshot
-  harness verify [scope]         Run harness verification checks
-  harness apply [scope]          Apply or dry-run a harness patch
-  harness rollback <handle>      Roll back a harness checkpoint
+  harness observe [path]         Capture agent-oriented state snapshot
+  harness verify <path>          Run harness verification checks
+  harness apply <path>           Apply a harness patch
+  harness rollback <id>          Roll back a harness checkpoint
   harness history                Show recent harness activity
   timeline [info]                Timeline state
   timeline play                  Start playback
@@ -1074,8 +1031,8 @@ Subcommands:
   capabilities                   Query supported harness routes/features
   observe [scope]                Capture an observation snapshot
   verify [scope]                 Run verification checks
-  apply [scope]                  Apply or dry-run a patch plan
-  rollback <handle>              Restore a prior checkpoint
+  apply <scope>                  Apply a routed patch plan
+  rollback <id>                  Restore a prior checkpoint
   history                        List recent harness iterations
 
 Shared JSON Input:
@@ -1085,282 +1042,213 @@ Shared JSON Input:
 
 Examples:
   td-cli harness capabilities
-  td-cli harness observe /project1 --goal "stabilize output" --depth 2
-  td-cli harness verify /project1 --check '{"kind":"node_exists","target":"/project1/out1"}'
-  td-cli harness apply /project1 --dry-run --file patch.json
-  td-cli harness rollback ckpt_123 --reason "failed verification"
+  td-cli harness observe /project1 --depth 2 --include-snapshot
+  td-cli harness verify /project1 --assert '{"kind":"family","equals":"COMP"}'
+  td-cli harness apply /project1 --file patch.json
+  td-cli harness rollback 1712900000-harness
   td-cli harness history --limit 10`)
 }
 
-type harnessPayloadRequest struct {
-	Request       interface{}
-	RemainingArgs []string
-}
-
-func parseHarnessObserveArgs(args []string) (harnessPayloadRequest, error) {
-	req := protocol.HarnessObserveRequest{}
-	remaining := make([]string, 0, len(args))
+func parseHarnessObserveArgs(args []string) (protocol.HarnessObserveRequest, []string, error) {
+	req := protocol.HarnessObserveRequest{Depth: 2}
+	extra := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--scope":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness observe [scope] [--goal <text>] [--depth N] [--include <field>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Scope = args[i+1]
-			i++
-		case "--goal":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness observe [scope] [--goal <text>] [--depth N] [--include <field>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Goal = args[i+1]
-			i++
 		case "--depth":
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness observe [scope] [--goal <text>] [--depth N] [--include <field>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness observe [path] [--depth N] [--include-snapshot] [--file payload.json] [--data <json>]")
 			}
 			req.Depth, _ = strconv.Atoi(args[i+1])
 			i++
-		case "--include":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness observe [scope] [--goal <text>] [--depth N] [--include <field>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Include = append(req.Include, args[i+1])
-			i++
-		case "--request-id":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness observe [scope] [--goal <text>] [--depth N] [--include <field>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.RequestID = args[i+1]
-			i++
+		case "--include-snapshot":
+			req.IncludeSnapshot = true
 		case "--file", "--data":
-			remaining = append(remaining, args[i])
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness observe [scope] [--goal <text>] [--depth N] [--include <field>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness observe [path] [--depth N] [--include-snapshot] [--file payload.json] [--data <json>]")
 			}
-			remaining = append(remaining, args[i+1])
+			extra = append(extra, args[i], args[i+1])
 			i++
 		default:
 			if strings.HasPrefix(args[i], "--") {
-				return harnessPayloadRequest{}, fmt.Errorf("unknown harness observe flag: %s", args[i])
+				return req, nil, fmt.Errorf("unknown harness observe flag: %s", args[i])
 			}
-			if req.Scope != "" {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness observe [scope] [--goal <text>] [--depth N] [--include <field>] [--request-id <id>] [--file payload.json] [--data <json>]")
+			if req.Path != "" {
+				return req, nil, fmt.Errorf("usage: td-cli harness observe [path] [--depth N] [--include-snapshot] [--file payload.json] [--data <json>]")
 			}
-			req.Scope = args[i]
+			req.Path = args[i]
 		}
 	}
-	return harnessPayloadRequest{Request: req, RemainingArgs: remaining}, nil
+	if req.Path == "" {
+		req.Path = "/"
+	}
+	return req, extra, nil
 }
 
-func parseHarnessVerifyArgs(args []string) (harnessPayloadRequest, error) {
-	req := protocol.HarnessVerifyRequest{}
-	remaining := make([]string, 0, len(args))
+func parseHarnessVerifyArgs(args []string) (protocol.HarnessVerifyRequest, []string, error) {
+	req := protocol.HarnessVerifyRequest{Depth: 2}
+	extra := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--scope":
+		case "--depth":
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness verify [scope] [--goal <text>] [--check <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness verify <path> [--assert <json>] [--depth N] [--include-observation] [--file payload.json] [--data <json>]")
 			}
-			req.Scope = args[i+1]
+			req.Depth, _ = strconv.Atoi(args[i+1])
 			i++
-		case "--goal":
+		case "--include-observation":
+			req.IncludeObservation = true
+		case "--assert":
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness verify [scope] [--goal <text>] [--check <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness verify <path> [--assert <json>] [--depth N] [--include-observation] [--file payload.json] [--data <json>]")
 			}
-			req.Goal = args[i+1]
-			i++
-		case "--check":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness verify [scope] [--goal <text>] [--check <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			check, err := parseHarnessCheck(args[i+1])
+			assertion, err := parseHarnessAssertion(args[i+1])
 			if err != nil {
-				return harnessPayloadRequest{}, err
+				return req, nil, err
 			}
-			req.Checks = append(req.Checks, check)
-			i++
-		case "--request-id":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness verify [scope] [--goal <text>] [--check <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.RequestID = args[i+1]
+			req.Assertions = append(req.Assertions, assertion)
 			i++
 		case "--file", "--data":
-			remaining = append(remaining, args[i])
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness verify [scope] [--goal <text>] [--check <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness verify <path> [--assert <json>] [--depth N] [--include-observation] [--file payload.json] [--data <json>]")
 			}
-			remaining = append(remaining, args[i+1])
+			extra = append(extra, args[i], args[i+1])
 			i++
 		default:
 			if strings.HasPrefix(args[i], "--") {
-				return harnessPayloadRequest{}, fmt.Errorf("unknown harness verify flag: %s", args[i])
+				return req, nil, fmt.Errorf("unknown harness verify flag: %s", args[i])
 			}
-			if req.Scope != "" {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness verify [scope] [--goal <text>] [--check <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+			if req.Path != "" {
+				return req, nil, fmt.Errorf("usage: td-cli harness verify <path> [--assert <json>] [--depth N] [--include-observation] [--file payload.json] [--data <json>]")
 			}
-			req.Scope = args[i]
+			req.Path = args[i]
 		}
 	}
-	return harnessPayloadRequest{Request: req, RemainingArgs: remaining}, nil
+	if req.Path == "" {
+		return req, nil, fmt.Errorf("usage: td-cli harness verify <path> [--assert <json>] [--depth N] [--include-observation] [--file payload.json] [--data <json>]")
+	}
+	return req, extra, nil
 }
 
-func parseHarnessApplyArgs(args []string) (harnessPayloadRequest, error) {
-	req := protocol.HarnessApplyRequest{}
-	remaining := make([]string, 0, len(args))
+func parseHarnessApplyArgs(args []string) (protocol.HarnessApplyRequest, []string, error) {
+	req := protocol.HarnessApplyRequest{SnapshotDepth: 20, StopOnError: true}
+	extra := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--scope":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness apply [scope] [--goal <text>] [--dry-run] [--op <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Scope = args[i+1]
-			i++
 		case "--goal":
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness apply [scope] [--goal <text>] [--dry-run] [--op <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness apply <targetPath> [--goal <text>] [--note <text>] [--snapshot-depth N] [--continue-on-error] [--op <json>] [--file payload.json] [--data <json>]")
 			}
 			req.Goal = args[i+1]
 			i++
-		case "--dry-run":
-			req.DryRun = true
+		case "--note":
+			if i+1 >= len(args) {
+				return req, nil, fmt.Errorf("usage: td-cli harness apply <targetPath> [--goal <text>] [--note <text>] [--snapshot-depth N] [--continue-on-error] [--op <json>] [--file payload.json] [--data <json>]")
+			}
+			req.Note = args[i+1]
+			i++
+		case "--snapshot-depth":
+			if i+1 >= len(args) {
+				return req, nil, fmt.Errorf("usage: td-cli harness apply <targetPath> [--goal <text>] [--note <text>] [--snapshot-depth N] [--continue-on-error] [--op <json>] [--file payload.json] [--data <json>]")
+			}
+			req.SnapshotDepth, _ = strconv.Atoi(args[i+1])
+			i++
+		case "--continue-on-error":
+			req.StopOnError = false
 		case "--op":
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness apply [scope] [--goal <text>] [--dry-run] [--op <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness apply <targetPath> [--goal <text>] [--note <text>] [--snapshot-depth N] [--continue-on-error] [--op <json>] [--file payload.json] [--data <json>]")
 			}
 			op, err := parseHarnessOperation(args[i+1])
 			if err != nil {
-				return harnessPayloadRequest{}, err
+				return req, nil, err
 			}
 			req.Operations = append(req.Operations, op)
 			i++
-		case "--request-id":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness apply [scope] [--goal <text>] [--dry-run] [--op <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.RequestID = args[i+1]
-			i++
 		case "--file", "--data":
-			remaining = append(remaining, args[i])
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness apply [scope] [--goal <text>] [--dry-run] [--op <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness apply <targetPath> [--goal <text>] [--note <text>] [--snapshot-depth N] [--continue-on-error] [--op <json>] [--file payload.json] [--data <json>]")
 			}
-			remaining = append(remaining, args[i+1])
+			extra = append(extra, args[i], args[i+1])
 			i++
 		default:
 			if strings.HasPrefix(args[i], "--") {
-				return harnessPayloadRequest{}, fmt.Errorf("unknown harness apply flag: %s", args[i])
+				return req, nil, fmt.Errorf("unknown harness apply flag: %s", args[i])
 			}
-			if req.Scope != "" {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness apply [scope] [--goal <text>] [--dry-run] [--op <json>] [--request-id <id>] [--file payload.json] [--data <json>]")
+			if req.TargetPath != "" {
+				return req, nil, fmt.Errorf("usage: td-cli harness apply <targetPath> [--goal <text>] [--note <text>] [--snapshot-depth N] [--continue-on-error] [--op <json>] [--file payload.json] [--data <json>]")
 			}
-			req.Scope = args[i]
+			req.TargetPath = args[i]
 		}
 	}
-	return harnessPayloadRequest{Request: req, RemainingArgs: remaining}, nil
+	if req.TargetPath == "" {
+		return req, nil, fmt.Errorf("usage: td-cli harness apply <targetPath> [--goal <text>] [--note <text>] [--snapshot-depth N] [--continue-on-error] [--op <json>] [--file payload.json] [--data <json>]")
+	}
+	return req, extra, nil
 }
 
-func parseHarnessRollbackArgs(args []string) (harnessPayloadRequest, error) {
+func parseHarnessRollbackArgs(args []string) (protocol.HarnessRollbackRequest, []string, error) {
 	req := protocol.HarnessRollbackRequest{}
-	remaining := make([]string, 0, len(args))
+	extra := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--handle":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness rollback <handle> [--reason <text>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Handle = args[i+1]
-			i++
-		case "--reason":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness rollback <handle> [--reason <text>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Reason = args[i+1]
-			i++
-		case "--request-id":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness rollback <handle> [--reason <text>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.RequestID = args[i+1]
-			i++
 		case "--file", "--data":
-			remaining = append(remaining, args[i])
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness rollback <handle> [--reason <text>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness rollback <id> [--file payload.json] [--data <json>]")
 			}
-			remaining = append(remaining, args[i+1])
+			extra = append(extra, args[i], args[i+1])
 			i++
 		default:
 			if strings.HasPrefix(args[i], "--") {
-				return harnessPayloadRequest{}, fmt.Errorf("unknown harness rollback flag: %s", args[i])
+				return req, nil, fmt.Errorf("unknown harness rollback flag: %s", args[i])
 			}
-			if req.Handle != "" {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness rollback <handle> [--reason <text>] [--request-id <id>] [--file payload.json] [--data <json>]")
+			if req.ID != "" {
+				return req, nil, fmt.Errorf("usage: td-cli harness rollback <id> [--file payload.json] [--data <json>]")
 			}
-			req.Handle = args[i]
+			req.ID = args[i]
 		}
 	}
-	if req.Handle == "" {
-		return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness rollback <handle> [--reason <text>] [--request-id <id>] [--file payload.json] [--data <json>]")
+	if req.ID == "" {
+		return req, nil, fmt.Errorf("usage: td-cli harness rollback <id> [--file payload.json] [--data <json>]")
 	}
-	return harnessPayloadRequest{Request: req, RemainingArgs: remaining}, nil
+	return req, extra, nil
 }
 
-func parseHarnessHistoryArgs(args []string) (harnessPayloadRequest, error) {
+func parseHarnessHistoryArgs(args []string) (protocol.HarnessHistoryRequest, []string, error) {
 	req := protocol.HarnessHistoryRequest{Limit: 20}
-	remaining := make([]string, 0, len(args))
+	extra := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--scope":
+		case "--target":
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness history [--scope <path>] [--limit N] [--cursor <token>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness history [--target <path>] [--limit N] [--file payload.json] [--data <json>]")
 			}
-			req.Scope = args[i+1]
+			req.TargetPath = args[i+1]
 			i++
 		case "--limit":
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness history [--scope <path>] [--limit N] [--cursor <token>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness history [--target <path>] [--limit N] [--file payload.json] [--data <json>]")
 			}
 			req.Limit, _ = strconv.Atoi(args[i+1])
 			i++
-		case "--cursor":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness history [--scope <path>] [--limit N] [--cursor <token>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Cursor = args[i+1]
-			i++
-		case "--request-id":
-			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness history [--scope <path>] [--limit N] [--cursor <token>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.RequestID = args[i+1]
-			i++
 		case "--file", "--data":
-			remaining = append(remaining, args[i])
 			if i+1 >= len(args) {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness history [--scope <path>] [--limit N] [--cursor <token>] [--request-id <id>] [--file payload.json] [--data <json>]")
+				return req, nil, fmt.Errorf("usage: td-cli harness history [--target <path>] [--limit N] [--file payload.json] [--data <json>]")
 			}
-			remaining = append(remaining, args[i+1])
+			extra = append(extra, args[i], args[i+1])
 			i++
 		default:
-			if strings.HasPrefix(args[i], "--") {
-				return harnessPayloadRequest{}, fmt.Errorf("unknown harness history flag: %s", args[i])
-			}
-			if req.Scope != "" {
-				return harnessPayloadRequest{}, fmt.Errorf("usage: td-cli harness history [--scope <path>] [--limit N] [--cursor <token>] [--request-id <id>] [--file payload.json] [--data <json>]")
-			}
-			req.Scope = args[i]
+			return req, nil, fmt.Errorf("unknown harness history flag: %s", args[i])
 		}
 	}
-	return harnessPayloadRequest{Request: req, RemainingArgs: remaining}, nil
+	return req, extra, nil
 }
 
-func parseHarnessCheck(raw string) (protocol.HarnessCheck, error) {
-	var check protocol.HarnessCheck
-	if err := json.Unmarshal([]byte(raw), &check); err != nil {
-		return protocol.HarnessCheck{}, fmt.Errorf("invalid --check payload: %w", err)
+func parseHarnessAssertion(raw string) (protocol.HarnessAssertion, error) {
+	var assertion protocol.HarnessAssertion
+	if err := json.Unmarshal([]byte(raw), &assertion); err != nil {
+		return protocol.HarnessAssertion{}, fmt.Errorf("invalid --assert payload: %w", err)
 	}
-	return check, nil
+	return assertion, nil
 }
 
 func parseHarnessOperation(raw string) (protocol.HarnessOperation, error) {
@@ -1369,6 +1257,45 @@ func parseHarnessOperation(raw string) (protocol.HarnessOperation, error) {
 		return protocol.HarnessOperation{}, fmt.Errorf("invalid --op payload: %w", err)
 	}
 	return op, nil
+}
+
+func runDiff(args []string, jsonOutput bool, port int, project string, timeout time.Duration) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli diff <file1> <file2> | td-cli diff --live <snapshot> [path]")
+	}
+
+	live := false
+	path := "/"
+	var fileArgs []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--live" {
+			live = true
+		} else if args[i] == "--path" && i+1 < len(args) {
+			path = args[i+1]
+			i++
+		} else {
+			fileArgs = append(fileArgs, args[i])
+		}
+	}
+
+	if live {
+		if len(fileArgs) < 1 {
+			return fmt.Errorf("usage: td-cli diff --live <snapshot.json> [path]")
+		}
+		if len(fileArgs) > 1 {
+			path = fileArgs[1]
+		}
+		c, err := getClient(port, project, timeout)
+		if err != nil {
+			return err
+		}
+		return commands.DiffLive(c, fileArgs[0], path, jsonOutput)
+	}
+
+	if len(fileArgs) < 2 {
+		return fmt.Errorf("usage: td-cli diff <file1> <file2>")
+	}
+	return commands.DiffFiles(fileArgs[0], fileArgs[1], jsonOutput)
 }
 
 func buildHarnessPayload(base interface{}, args []string) (map[string]interface{}, error) {
