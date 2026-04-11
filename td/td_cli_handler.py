@@ -73,6 +73,23 @@ def handle_request(uri, body):
         "/table/cell": handle_table_cell,
         "/table/append": handle_table_append,
         "/table/delete": handle_table_delete,
+        "/timeline/info": handle_timeline_info,
+        "/timeline/play": handle_timeline_play,
+        "/timeline/pause": handle_timeline_pause,
+        "/timeline/seek": handle_timeline_seek,
+        "/timeline/range": handle_timeline_range,
+        "/timeline/rate": handle_timeline_rate,
+        "/cook/node": handle_cook_node,
+        "/cook/network": handle_cook_network,
+        "/ui/navigate": handle_ui_navigate,
+        "/ui/select": handle_ui_select,
+        "/ui/pulse": handle_ui_pulse,
+        "/batch/exec": handle_batch_exec,
+        "/batch/parset": handle_batch_parset,
+        "/media/info": handle_media_info,
+        "/media/export": handle_media_export,
+        "/media/record": handle_media_record,
+        "/media/snapshot": handle_media_snapshot,
     }
 
     handler = routes.get(uri)
@@ -1651,12 +1668,14 @@ def handle_logs_tail(body):
 def handle_network_describe(body):
     """Generate AI-friendly description of a network."""
     path = body.get("path", "/")
+    depth = body.get("depth", 1)
+    include_params = body.get("includeParams", True)
 
     target = op(path)
     if target is None:
         return _error(f"Operator not found: {path}")
 
-    children = target.findChildren(depth=1)
+    children = target.findChildren(depth=depth)
 
     nodes = []
     edges = []
@@ -1668,23 +1687,26 @@ def handle_network_describe(body):
 
         node_info = {
             "name": child.name,
+            "path": child.path,
             "type": child.type,
             "family": child.family,
             "keyParams": {},
         }
 
-        # Non-default parameters
-        for p in child.pars():
-            try:
-                if str(p.val) != str(p.default):
-                    node_info["keyParams"][p.name] = str(p.val)
-            except Exception:
-                pass
+        if include_params:
+            for p in child.pars():
+                try:
+                    if str(p.val) != str(p.default):
+                        val_str = str(p.val)
+                        if len(val_str) > 100:
+                            val_str = val_str[:100] + "..."
+                        node_info["keyParams"][p.name] = val_str
+                except Exception:
+                    pass
 
         nodes.append(node_info)
         families[child.family] = families.get(child.family, 0) + 1
 
-        # Output connections
         for i, conn in enumerate(child.outputConnectors):
             for c in conn.connections:
                 edges.append(
@@ -1695,9 +1717,6 @@ def handle_network_describe(body):
                     }
                 )
 
-    # Find data flow chains (source -> ... -> sink)
-    chains = []
-    # Find roots (nodes with no inputs from siblings)
     sibling_names = {n["name"] for n in nodes}
     roots = []
     for n in nodes:
@@ -1706,6 +1725,8 @@ def handle_network_describe(body):
         )
         if not has_input:
             roots.append(n["name"])
+
+    chains = []
 
     def trace_chain(name, visited=None):
         if visited is None:
@@ -1727,6 +1748,17 @@ def handle_network_describe(body):
         if len(chain) > 1:
             chains.append(" -> ".join(chain))
 
+    isolated = [
+        n["name"]
+        for n in nodes
+        if not any(e["from"] == n["name"] or e["to"] == n["name"] for e in edges)
+    ]
+
+    summary_parts = [f"{len(nodes)} nodes", f"{len(edges)} connections"]
+    if isolated:
+        summary_parts.append(f"{len(isolated)} isolated")
+    summary = ", ".join(summary_parts)
+
     description = {
         "path": path,
         "nodeCount": len(nodes),
@@ -1734,10 +1766,10 @@ def handle_network_describe(body):
         "nodes": nodes,
         "connections": edges,
         "dataFlow": chains,
+        "isolatedNodes": isolated,
+        "summary": summary,
     }
-    return _success(
-        f"Network: {len(nodes)} nodes, {len(edges)} connections", description
-    )
+    return _success(f"Network: {summary}", description)
 
 
 # --- monitor ---
@@ -2248,18 +2280,18 @@ def handle_pop_bounds(body):
     return _success(
         "POP bounds",
         {
-            "minX": b.minX,
-            "minY": b.minY,
-            "minZ": b.minZ,
-            "maxX": b.maxX,
-            "maxY": b.maxY,
-            "maxZ": b.maxZ,
-            "centerX": b.centerX,
-            "centerY": b.centerY,
-            "centerZ": b.centerZ,
-            "sizeX": b.sizeX,
-            "sizeY": b.sizeY,
-            "sizeZ": b.sizeZ,
+            "minX": b.min.x,
+            "minY": b.min.y,
+            "minZ": b.min.z,
+            "maxX": b.max.x,
+            "maxY": b.max.y,
+            "maxZ": b.max.z,
+            "centerX": b.center.x,
+            "centerY": b.center.y,
+            "centerZ": b.center.z,
+            "sizeX": b.size.x,
+            "sizeY": b.size.y,
+            "sizeZ": b.size.z,
         },
     )
 
@@ -2404,6 +2436,292 @@ def handle_table_delete(body):
         return _success(f"Col {index} deleted", {"numCols": target.numCols})
     else:
         return _error(f"Unknown mode: {mode} (use row or col)")
+
+
+# --- timeline ---
+
+
+def handle_timeline_info(body):
+    root = root()
+    tl = root.time
+    return _success(
+        "Timeline info",
+        {
+            "currentTime": tl.frame / tl.rate,
+            "start": tl.startFrame / tl.rate,
+            "end": tl.endFrame / tl.rate,
+            "rate": tl.rate,
+            "isPlaying": tl.play,
+            "playMode": str(tl.playMode),
+            "cuePoint": tl.cueFrame / tl.rate if tl.rate > 0 else 0,
+            "isCueEnabled": tl.cueEnable,
+            "signaled": tl.signaled,
+            "currentFrame": tl.frame,
+            "startFrame": tl.startFrame,
+            "endFrame": tl.endFrame,
+        },
+    )
+
+
+def handle_timeline_play(body):
+    root = root()
+    root.time.play = True
+    return _success("Timeline playing")
+
+
+def handle_timeline_pause(body):
+    root = root()
+    root.time.play = False
+    return _success("Timeline paused")
+
+
+def handle_timeline_seek(body):
+    t = body.get("time")
+    frame = body.get("frame")
+    root = root()
+    if frame is not None:
+        root.time.frame = int(frame)
+    elif t is not None:
+        root.time.frame = int(float(t) * root.time.rate)
+    else:
+        return _error("time or frame required")
+    return _success("Seeked", {"frame": root.time.frame})
+
+
+def handle_timeline_range(body):
+    start = body.get("start")
+    end = body.get("end")
+    root = root()
+    if start is not None:
+        root.time.startFrame = int(float(start) * root.time.rate)
+    if end is not None:
+        root.time.endFrame = int(float(end) * root.time.rate)
+    return _success(
+        "Range set",
+        {"startFrame": root.time.startFrame, "endFrame": root.time.endFrame},
+    )
+
+
+def handle_timeline_rate(body):
+    rate = body.get("rate")
+    if rate is None:
+        return _error("rate required")
+    root = root()
+    root.time.rate = float(rate)
+    return _success("Rate set", {"rate": root.time.rate})
+
+
+# --- cook ---
+
+
+def handle_cook_node(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    t0 = time.time()
+    target.cook(force=True)
+    elapsed = (time.time() - t0) * 1000
+    return _success(
+        "Cooked", {"path": path, "cookTime": round(elapsed, 2), "cooked": True}
+    )
+
+
+def handle_cook_network(body):
+    path = body.get("path", "/")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    children = target.findChildren(depth=1)
+    t0 = time.time()
+    count = 0
+    for child in children:
+        try:
+            child.cook(force=True)
+            count += 1
+        except Exception:
+            pass
+    elapsed = (time.time() - t0) * 1000
+    return _success(
+        "Network cooked",
+        {"path": path, "nodesCooked": count, "totalTime": round(elapsed, 2)},
+    )
+
+
+# --- ui ---
+
+
+def handle_ui_navigate(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    ui.navigator.navigateTo(target)
+    return _success(f"Navigated to {path}")
+
+
+def handle_ui_select(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    target.currentViewer = target
+    target.par.select = 1
+    return _success(f"Selected {path}")
+
+
+def handle_ui_pulse(body):
+    path = body.get("path", "")
+    name = body.get("name", "")
+    if not path or not name:
+        return _error("path and name required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    p = target.par[name]
+    if p is None:
+        return _error(f"Parameter not found: {name}")
+    p.pulse()
+    return _success(f"Pulsed {path}.{name}")
+
+
+# --- batch ---
+
+
+def handle_batch_exec(body):
+    commands_list = body.get("commands", [])
+    if not commands_list:
+        return _error("commands list required")
+    t0 = time.time()
+    results = []
+    success_count = 0
+    for cmd in commands_list:
+        route = cmd.get("route", "")
+        cmd_body = cmd.get("body", {})
+        result = handle_request(route, cmd_body)
+        ok = result.get("success", False)
+        if ok:
+            success_count += 1
+        results.append(
+            {"route": route, "success": ok, "message": result.get("message", "")}
+        )
+    elapsed = (time.time() - t0) * 1000
+    return _success(
+        f"Batch: {success_count}/{len(commands_list)} succeeded",
+        {
+            "total": len(commands_list),
+            "success": success_count,
+            "failed": len(commands_list) - success_count,
+            "duration": round(elapsed, 2),
+            "results": results,
+        },
+    )
+
+
+def handle_batch_parset(body):
+    sets = body.get("sets", [])
+    if not sets:
+        return _error("sets list required")
+    success_count = 0
+    for item in sets:
+        path = item.get("path", "")
+        params = item.get("params", {})
+        result = handle_par_set({"path": path, "params": params})
+        if result.get("success", False):
+            success_count += 1
+    return _success(
+        f"Batch par set: {success_count}/{len(sets)}",
+        {
+            "total": len(sets),
+            "success": success_count,
+            "failed": len(sets) - success_count,
+        },
+    )
+
+
+# --- media ---
+
+
+def handle_media_info(body):
+    path = body.get("path", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    info = {"path": path, "type": target.type}
+    if hasattr(target, "par"):
+        fp = getattr(target.par, "file", None)
+        if fp is not None:
+            info["filePath"] = fp.eval()
+    if target.isTOP:
+        info["width"] = target.width
+        info["height"] = target.height
+    elif target.isCHOP:
+        info["numChannels"] = target.numChans
+        info["numSamples"] = target.numSamples
+        info["sampleRate"] = target.rate
+    elif target.isSOP:
+        info["numPoints"] = target.numPoints
+        info["numPrims"] = target.numPrims
+    return _success("Media info", info)
+
+
+def handle_media_export(body):
+    path = body.get("path", "")
+    output_file = body.get("outputFile", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if not output_file:
+        output_file = tempfile.mktemp(suffix=".png")
+    if target.isTOP:
+        target.save(output_file)
+    else:
+        return _error(f"Export not supported for {target.family}")
+    return _success("Exported", {"outputPath": output_file})
+
+
+def handle_media_record(body):
+    path = body.get("path", "")
+    start = body.get("start", 0)
+    end = body.get("end", 0)
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    rec = op("/project1").create(recordCHOP)
+    if rec is None:
+        return _error("Could not create Record CHOP")
+    if start > 0:
+        rec.par.start.pulse()
+    rec.par.record.pulse()
+    return _success("Recording started", {"path": rec.path})
+
+
+def handle_media_snapshot(body):
+    path = body.get("path", "")
+    output_file = body.get("outputFile", "")
+    if not path:
+        return _error("path required")
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+    if not output_file:
+        output_file = tempfile.mktemp(suffix=".png")
+    if target.isTOP:
+        target.save(output_file)
+        return _success("Snapshot saved", {"outputPath": output_file})
+    return _error(f"Snapshot not supported for {target.family}")
 
 
 # --- tools ---
@@ -3455,6 +3773,248 @@ TOOL_SCHEMAS = [
                 "type": "integer",
                 "required": False,
                 "description": "Index (last if omitted)",
+            },
+        ],
+    },
+    {
+        "name": "timeline/info",
+        "route": "/timeline/info",
+        "description": "Get timeline state (time, range, rate, playing status)",
+        "parameters": [],
+    },
+    {
+        "name": "timeline/play",
+        "route": "/timeline/play",
+        "description": "Start timeline playback",
+        "parameters": [],
+    },
+    {
+        "name": "timeline/pause",
+        "route": "/timeline/pause",
+        "description": "Pause timeline playback",
+        "parameters": [],
+    },
+    {
+        "name": "timeline/seek",
+        "route": "/timeline/seek",
+        "description": "Seek timeline to a specific time or frame",
+        "parameters": [
+            {
+                "name": "time",
+                "type": "number",
+                "required": False,
+                "description": "Time in seconds",
+            },
+            {
+                "name": "frame",
+                "type": "integer",
+                "required": False,
+                "description": "Frame number",
+            },
+        ],
+    },
+    {
+        "name": "timeline/range",
+        "route": "/timeline/range",
+        "description": "Set timeline start/end range",
+        "parameters": [
+            {
+                "name": "start",
+                "type": "number",
+                "required": False,
+                "description": "Start time in seconds",
+            },
+            {
+                "name": "end",
+                "type": "number",
+                "required": False,
+                "description": "End time in seconds",
+            },
+        ],
+    },
+    {
+        "name": "timeline/rate",
+        "route": "/timeline/rate",
+        "description": "Set timeline playback rate",
+        "parameters": [
+            {
+                "name": "rate",
+                "type": "number",
+                "required": True,
+                "description": "Playback rate (fps)",
+            },
+        ],
+    },
+    {
+        "name": "cook/node",
+        "route": "/cook/node",
+        "description": "Force cook a single operator",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Operator path to cook",
+            },
+        ],
+    },
+    {
+        "name": "cook/network",
+        "route": "/cook/network",
+        "description": "Force cook all operators in a network",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": False,
+                "description": "Network path (default: /)",
+            },
+        ],
+    },
+    {
+        "name": "ui/navigate",
+        "route": "/ui/navigate",
+        "description": "Navigate the network editor to a path",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Operator path to navigate to",
+            },
+        ],
+    },
+    {
+        "name": "ui/select",
+        "route": "/ui/select",
+        "description": "Select an operator in the network editor",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Operator path to select",
+            },
+        ],
+    },
+    {
+        "name": "ui/pulse",
+        "route": "/ui/pulse",
+        "description": "Pulse a parameter via UI",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Operator path",
+            },
+            {
+                "name": "name",
+                "type": "string",
+                "required": True,
+                "description": "Parameter name",
+            },
+        ],
+    },
+    {
+        "name": "batch/exec",
+        "route": "/batch/exec",
+        "description": "Execute multiple commands in sequence",
+        "parameters": [
+            {
+                "name": "commands",
+                "type": "array",
+                "required": True,
+                "description": "List of {route, body} objects",
+            },
+        ],
+    },
+    {
+        "name": "batch/parset",
+        "route": "/batch/parset",
+        "description": "Set parameters on multiple operators in one call",
+        "parameters": [
+            {
+                "name": "sets",
+                "type": "array",
+                "required": True,
+                "description": "List of {path, params} objects",
+            },
+        ],
+    },
+    {
+        "name": "media/info",
+        "route": "/media/info",
+        "description": "Get media info (resolution, duration, codec) for TOP/CHOP/SOP",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Operator path",
+            },
+        ],
+    },
+    {
+        "name": "media/export",
+        "route": "/media/export",
+        "description": "Export TOP as image file",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "TOP operator path",
+            },
+            {
+                "name": "outputFile",
+                "type": "string",
+                "required": True,
+                "description": "Output file path",
+            },
+        ],
+    },
+    {
+        "name": "media/record",
+        "route": "/media/record",
+        "description": "Start recording",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Operator path",
+            },
+            {
+                "name": "start",
+                "type": "number",
+                "required": False,
+                "description": "Start time",
+            },
+            {
+                "name": "end",
+                "type": "number",
+                "required": False,
+                "description": "End time",
+            },
+        ],
+    },
+    {
+        "name": "media/snapshot",
+        "route": "/media/snapshot",
+        "description": "Capture a snapshot of a TOP",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "TOP operator path",
+            },
+            {
+                "name": "outputFile",
+                "type": "string",
+                "required": False,
+                "description": "Output file path",
             },
         ],
     },

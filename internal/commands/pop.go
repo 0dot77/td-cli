@@ -136,10 +136,18 @@ func PopBounds(c *client.Client, path string, jsonOutput bool) error {
 		return nil
 	}
 	var data struct {
-		MinX, MinY, MinZ          float64 `json:"minX,minY,minZ"`
-		MaxX, MaxY, MaxZ          float64 `json:"maxX,maxY,maxZ"`
-		CenterX, CenterY, CenterZ float64 `json:"centerX,centerY,centerZ"`
-		SizeX, SizeY, SizeZ       float64 `json:"sizeX,sizeY,sizeZ"`
+		MinX    float64 `json:"minX"`
+		MinY    float64 `json:"minY"`
+		MinZ    float64 `json:"minZ"`
+		MaxX    float64 `json:"maxX"`
+		MaxY    float64 `json:"maxY"`
+		MaxZ    float64 `json:"maxZ"`
+		CenterX float64 `json:"centerX"`
+		CenterY float64 `json:"centerY"`
+		CenterZ float64 `json:"centerZ"`
+		SizeX   float64 `json:"sizeX"`
+		SizeY   float64 `json:"sizeY"`
+		SizeZ   float64 `json:"sizeZ"`
 	}
 	json.Unmarshal(resp.Data, &data)
 	fmt.Printf("Bounds:\n")

@@ -262,6 +262,21 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 	case "table":
 		return runTable(c, args, jsonOutput)
 
+	case "timeline":
+		return runTimeline(c, args, jsonOutput)
+
+	case "cook":
+		return runCook(c, args, jsonOutput)
+
+	case "ui":
+		return runUi(c, args, jsonOutput)
+
+	case "batch":
+		return runBatch(c, args, jsonOutput)
+
+	case "media":
+		return runMedia(c, args, jsonOutput)
+
 	default:
 		return fmt.Errorf("unknown command: %s\nRun 'td-cli help' for usage", command)
 	}
@@ -924,6 +939,21 @@ Commands:
   diff --live <file> [path]      Compare snapshot vs live TD state
   watch [path] [--interval ms]   Real-time performance monitor
   tools list                     Discover available tools (AI agent discovery)
+  timeline [info]                Timeline state
+  timeline play                  Start playback
+  timeline pause                 Pause playback
+  timeline seek <time>           Seek to time
+  timeline range --start --end   Set timeline range
+  timeline rate <fps>            Set playback rate
+  cook node <path>               Force cook operator
+  cook network [path]            Force cook network
+  ui navigate <path>             Navigate to operator
+  ui select <path>               Select operator
+  batch exec <file.json>         Batch execute commands
+  batch parset <file.json>       Batch set parameters
+  media info <path>              Media operator info
+  media export <path> <file>     Export TOP as image
+  media snapshot <path> [-o f]   Capture snapshot
   shaders list [--cat <cat>]     List shader templates
   shaders get <name>             Show shader template details
   shaders apply <name> <glsl>    Apply shader to GLSL TOP
@@ -1225,6 +1255,186 @@ func runTable(c *client.Client, args []string, jsonOutput bool) error {
 		return commands.TableDelete(c, args[0], mode, index, jsonOutput)
 	default:
 		return fmt.Errorf("unknown table subcommand: %s (use rows, cell, append, delete)", sub)
+	}
+}
+
+func runTimeline(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return commands.TimelineInfo(c, jsonOutput)
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		return commands.TimelineInfo(c, jsonOutput)
+	case "play":
+		return commands.TimelinePlay(c, jsonOutput)
+	case "pause":
+		return commands.TimelinePause(c, jsonOutput)
+	case "seek":
+		timeVal := -1.0
+		for i := 0; i < len(args); i++ {
+			timeVal, _ = strconv.ParseFloat(args[i], 64)
+		}
+		if timeVal < 0 {
+			return fmt.Errorf("usage: td-cli timeline seek <time>")
+		}
+		return commands.TimelineSeek(c, timeVal, jsonOutput)
+	case "range":
+		start, end := -1.0, -1.0
+		for i := 0; i+1 < len(args); i += 2 {
+			switch args[i] {
+			case "--start":
+				start, _ = strconv.ParseFloat(args[i+1], 64)
+			case "--end":
+				end, _ = strconv.ParseFloat(args[i+1], 64)
+			}
+		}
+		return commands.TimelineRange(c, start, end, jsonOutput)
+	case "rate":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli timeline rate <fps>")
+		}
+		rate, _ := strconv.ParseFloat(args[0], 64)
+		return commands.TimelineRate(c, rate, jsonOutput)
+	default:
+		return fmt.Errorf("unknown timeline subcommand: %s (use info, play, pause, seek, range, rate)", sub)
+	}
+}
+
+func runCook(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli cook <node|network> <path>")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "node":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli cook node <path>")
+		}
+		return commands.CookNode(c, args[0], jsonOutput)
+	case "network":
+		path := "/"
+		if len(args) > 0 {
+			path = args[0]
+		}
+		return commands.CookNetwork(c, path, jsonOutput)
+	default:
+		return fmt.Errorf("unknown cook subcommand: %s (use node, network)", sub)
+	}
+}
+
+func runUi(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli ui <navigate|select|pulse> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "navigate":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli ui navigate <path>")
+		}
+		return commands.UiNavigate(c, args[0], jsonOutput)
+	case "select":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli ui select <path>")
+		}
+		return commands.UiSelect(c, args[0], jsonOutput)
+	case "pulse":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ui pulse <path> <param>")
+		}
+		return commands.UiPulse(c, args[0], args[1], jsonOutput)
+	default:
+		return fmt.Errorf("unknown ui subcommand: %s (use navigate, select, pulse)", sub)
+	}
+}
+
+func runBatch(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli batch <exec|parset> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "exec":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli batch exec <json_file>")
+		}
+		data, err := os.ReadFile(args[0])
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+		var cmds []map[string]interface{}
+		if err := json.Unmarshal(data, &cmds); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		return commands.BatchExec(c, cmds, jsonOutput)
+	case "parset":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli batch parset <json_file>")
+		}
+		data, err := os.ReadFile(args[0])
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+		var sets []map[string]interface{}
+		if err := json.Unmarshal(data, &sets); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		return commands.BatchParSet(c, sets, jsonOutput)
+	default:
+		return fmt.Errorf("unknown batch subcommand: %s (use exec, parset)", sub)
+	}
+}
+
+func runMedia(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli media <info|export|record|snapshot> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli media info <path>")
+		}
+		return commands.MediaInfo(c, args[0], jsonOutput)
+	case "export":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli media export <path> <output_file>")
+		}
+		return commands.MediaExport(c, args[0], args[1], jsonOutput)
+	case "record":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli media record <path> [--start S] [--end E]")
+		}
+		start, end := 0.0, 0.0
+		for i := 1; i+1 < len(args); i += 2 {
+			switch args[i] {
+			case "--start":
+				start, _ = strconv.ParseFloat(args[i+1], 64)
+			case "--end":
+				end, _ = strconv.ParseFloat(args[i+1], 64)
+			}
+		}
+		return commands.MediaRecord(c, args[0], start, end, jsonOutput)
+	case "snapshot":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli media snapshot <path> [-o file]")
+		}
+		outputFile := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "-o" && i+1 < len(args) {
+				outputFile = args[i+1]
+				i++
+			}
+		}
+		return commands.MediaSnapshot(c, args[0], outputFile, jsonOutput)
+	default:
+		return fmt.Errorf("unknown media subcommand: %s (use info, export, record, snapshot)", sub)
 	}
 }
 
