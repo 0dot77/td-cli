@@ -79,3 +79,38 @@ NOT Python assignments — `par.val = X` sets a static value.
 If handler DAT has compilation errors, ALL POST routes fail (including `dat write`).
 Recovery: in TD UI, open `/project1/TDCliServer/handler` DAT and paste content from `td/td_cli_handler.py`.
 Alternative: use `td-cli exec` BEFORE the bad handler is pushed to verify syntax with `python3 -c "import py_compile; py_compile.compile('td/td_cli_handler.py', doraise=True)"`
+
+### Node Layout (ALWAYS position nodes)
+When creating multiple operators, ALWAYS set node positions to avoid overlap.
+Use a helper function and arrange nodes in logical flow:
+
+```python
+def pos(op_ref, x, y):
+    op_ref.nodeCenterX = x
+    op_ref.nodeCenterY = y
+```
+
+**Layout convention (left → right = data flow, top → bottom = parallel branches):**
+- Column spacing: ~300px between stages
+- Row spacing: ~150px between parallel branches
+- Source nodes: x starts at -1800
+- Processing: -400 to 500
+- Render: 800 to 1400
+- Post-processing: 1700 to 2600
+
+Example layout pattern:
+```
+Audio CHOPs (x: -1800 to -900)  |  POP chain (x: -400 to 500)  |  Render (x: 800+)  |  Post (x: 1700+)
+  audio_in (-1800, 500)         |  gridp (-400, 500)            |  geo1 (800, 300)   |  level1 (1700, 500)
+  sel_bass (-1500, 600)         |  noise1 (-100, 500)           |  cam1 (800, 600)   |  glow1 (1700, 300)
+  sel_mid (-1500, 450)          |  xform1 (200, 500)            |  light1 (1100,600) |  comp1 (2000, 400)
+  sel_high (-1500, 300)         |  pop_out (500, 500)           |  render (1400,450) |  out1 (2600, 450)
+```
+
+### Creating Networks — Checklist
+1. Always `import td` and use `td.lowercaseTypeCHOP` (not uppercase globals)
+2. Always set positions with `pos(op, x, y)` immediately after creation
+3. Connect inputs: `child.inputConnectors[0].connect(parent.outputConnectors[0])`
+4. For renderTOP: use `par.camera`, `par.geometry`, `par.lights` (not wire connections)
+5. For audio reactivity: use `par.expr = "op('math_bass')['chan1'] * 2.0"` (NOT `par.val`)
+6. Verify parameter names exist before setting — TD 099 has many gotchas (see table above)
