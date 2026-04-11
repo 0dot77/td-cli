@@ -56,10 +56,11 @@ td-cli ops list /project1
 - `selectCHOP`: `channames` (not `chans`)
 - `mathCHOP`: `gain`, `fromrange1/2`, `torange1/2` (no `clamp`/`clampmax`)
 - `levelTOP`: `brightness1` (not `brightness`), `contrast`
-- `compositeTOP`: `operand` (not `blend`) — values: 0=multiply, 4=add, etc.
+- `compositeTOP`: `operand` (not `blend`) — use STRING values: `'add'`, `'multiply'`, `'over'`, `'screen'`, etc. (NOT integer indices)
 - `lightCOMP`: `dimmer` (not `intensity`), `cr/cg/cb` (not `colorr/colorg/colorb`)
 - `blurTOP`: `size`
 - `pointgeneratorPOP`: `numpoints` (not `rate`)
+- `noisePOP`: `spread`, `gain` (not `turbx`/`turby`/`turbz` — use `transformPOP` for per-axis)
 - `gridPOP`: `sizex/sizey`, `cols/rows`, `randomx/randomy`
 
 ### Making Parameters Audio Reactive
@@ -68,6 +69,8 @@ Use expression references on parameters:
 par.expr = "op('math_bass')['chan1'] * 2.0"
 ```
 NOT Python assignments — `par.val = X` sets a static value.
+IMPORTANT: `audioDeviceInCHOP` typically outputs only 1 channel (`chan1`).
+Do NOT select `chan1-chan8`, `chan7-chan24`, etc. — use `sel.par.channames = 'chan1'` and split with `analyzeCHOP` or `audiofilterCHOP` for frequency bands.
 
 ### Exec Handler Scoping
 - `-f` file mode works identically to inline mode (both go through same handler)
