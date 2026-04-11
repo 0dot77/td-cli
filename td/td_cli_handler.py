@@ -6,6 +6,7 @@ import json
 import sys
 import io
 import os
+import re
 import time
 import tempfile
 import hashlib
@@ -19,80 +20,7 @@ CONNECTOR_INSTALL_MODE = "tox"
 
 def handle_request(uri, body):
     """Route request to appropriate handler based on URI."""
-    routes = {
-        "/exec": handle_exec,
-        "/ops/list": handle_ops_list,
-        "/ops/create": handle_ops_create,
-        "/ops/delete": handle_ops_delete,
-        "/ops/info": handle_ops_info,
-        "/ops/rename": handle_ops_rename,
-        "/ops/copy": handle_ops_copy,
-        "/ops/move": handle_ops_move,
-        "/ops/clone": handle_ops_clone,
-        "/ops/search": handle_ops_search,
-        "/par/get": handle_par_get,
-        "/par/set": handle_par_set,
-        "/par/pulse": handle_par_pulse,
-        "/par/reset": handle_par_reset,
-        "/par/expr": handle_par_expr,
-        "/par/export": handle_par_export,
-        "/par/import": handle_par_import,
-        "/connect": handle_connect,
-        "/disconnect": handle_disconnect,
-        "/dat/read": handle_dat_read,
-        "/dat/write": handle_dat_write,
-        "/project/info": handle_project_info,
-        "/project/save": handle_project_save,
-        "/screenshot": handle_screenshot,
-        "/network/export": handle_network_export,
-        "/network/import": handle_network_import,
-        "/backup/list": handle_backup_list,
-        "/backup/restore": handle_backup_restore,
-        "/logs/list": handle_logs_list,
-        "/logs/tail": handle_logs_tail,
-        "/network/describe": handle_network_describe,
-        "/monitor": handle_monitor,
-        "/shaders/apply": handle_shaders_apply,
-        "/tox/export": handle_tox_export,
-        "/tox/import": handle_tox_import,
-        "/tools/list": handle_tools_list,
-        "/chop/info": handle_chop_info,
-        "/chop/channels": handle_chop_channels,
-        "/chop/sample": handle_chop_sample,
-        "/sop/info": handle_sop_info,
-        "/sop/points": handle_sop_points,
-        "/sop/attribs": handle_sop_attribs,
-        "/pop/info": handle_pop_info,
-        "/pop/points": handle_pop_points,
-        "/pop/prims": handle_pop_prims,
-        "/pop/verts": handle_pop_verts,
-        "/pop/bounds": handle_pop_bounds,
-        "/pop/attributes": handle_pop_attributes,
-        "/pop/save": handle_pop_save,
-        "/table/rows": handle_table_rows,
-        "/table/cell": handle_table_cell,
-        "/table/append": handle_table_append,
-        "/table/delete": handle_table_delete,
-        "/timeline/info": handle_timeline_info,
-        "/timeline/play": handle_timeline_play,
-        "/timeline/pause": handle_timeline_pause,
-        "/timeline/seek": handle_timeline_seek,
-        "/timeline/range": handle_timeline_range,
-        "/timeline/rate": handle_timeline_rate,
-        "/cook/node": handle_cook_node,
-        "/cook/network": handle_cook_network,
-        "/ui/navigate": handle_ui_navigate,
-        "/ui/select": handle_ui_select,
-        "/ui/pulse": handle_ui_pulse,
-        "/batch/exec": handle_batch_exec,
-        "/batch/parset": handle_batch_parset,
-        "/media/info": handle_media_info,
-        "/media/export": handle_media_export,
-        "/media/record": handle_media_record,
-        "/media/snapshot": handle_media_snapshot,
-    }
-
-    handler = routes.get(uri)
+    handler = ROUTE_TABLE.get(uri)
     if handler is None:
         return {"success": False, "message": f"Unknown route: {uri}", "data": None}
 
@@ -256,6 +184,17 @@ def _backup_root_dir():
     home = os.path.expanduser("~")
     project_hash = hashlib.sha256(_project_path().encode("utf-8")).hexdigest()[:16]
     return os.path.join(home, ".td-cli", "backups", project_hash)
+
+
+def _project_slug():
+    raw_name = getattr(project, "name", "") or os.path.splitext(
+        os.path.basename(_project_path())
+    )[0]
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", str(raw_name)).strip("-._")
+    if not slug:
+        slug = "unknown-project"
+    project_hash = hashlib.sha256(_project_path().encode("utf-8")).hexdigest()[:8]
+    return f"{slug}-{project_hash}"
 
 
 def _logs_root_dir():
@@ -464,6 +403,807 @@ def _list_backup_records(limit=20):
         except Exception:
             continue
 
+    records.sort(key=lambda item: item.get("createdAt", 0), reverse=True)
+    return records[:limit]
+
+
+def _harness_root_dir():
+    return os.path.join(os.path.expanduser("~"), ".td-cli", "harness", _project_slug())
+
+
+def _harness_iterations_dir():
+    return os.path.join(_harness_root_dir(), "iterations")
+
+
+def _harness_events_log_path():
+    return os.path.join(_harness_root_dir(), "events.jsonl")
+
+
+def _write_json_file(path, payload):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, ensure_ascii=True)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _append_harness_event(event):
+    root_dir = _harness_root_dir()
+    os.makedirs(root_dir, exist_ok=True)
+    with open(_harness_events_log_path(), "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=True) + "\n")
+
+
+def _read_json_file(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _read_harness_record(rollback_id):
+    record_path = os.path.join(_harness_iterations_dir(), rollback_id + ".json")
+    if not os.path.exists(record_path):
+        return None, record_path
+    return _read_json_file(record_path), record_path
+
+
+def _write_harness_record(record):
+    record_id = record.get("id") or f"{time.time_ns()}-harness"
+    record["id"] = record_id
+    record_path = os.path.join(_harness_iterations_dir(), record_id + ".json")
+    _write_json_file(record_path, record)
+    return record_id, record_path
+
+
+def _stringify_messages(value):
+    if value is None or value == "":
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if str(item)]
+    text = str(value)
+    return [line for line in text.splitlines() if line.strip()]
+
+
+def _get_operator_messages(target, attr_name):
+    if target is None or not hasattr(target, attr_name):
+        return []
+    member = getattr(target, attr_name)
+    try:
+        value = member(recurse=False) if callable(member) else member
+    except TypeError:
+        try:
+            value = member() if callable(member) else member
+        except Exception:
+            return []
+    except Exception:
+        return []
+    return _stringify_messages(value)
+
+
+def _path_label(path):
+    if path in ("", "/"):
+        return path or "/"
+    return path.rsplit("/", 1)[-1]
+
+
+def _snapshot_root_node(snapshot):
+    root_path = snapshot.get("rootPath", "")
+    for node in snapshot.get("nodes", []):
+        if node.get("path") == root_path:
+            return node
+    nodes = snapshot.get("nodes", [])
+    return nodes[0] if nodes else {}
+
+
+def _snapshot_target_state(target, depth=20):
+    state = {
+        "version": 1,
+        "capturedAt": time.time(),
+        "path": target.path,
+        "family": getattr(target, "family", ""),
+        "network": _serialize_network_snapshot(
+            target, depth, include_defaults=True, include_root=True
+        ),
+    }
+    if getattr(target, "family", "") == "DAT":
+        state["dat"] = _snapshot_dat(target)
+    return state
+
+
+def _summarize_target_state(state):
+    network = state.get("network", {})
+    root_node = _snapshot_root_node(network)
+    return {
+        "path": state.get("path", network.get("rootPath", "")),
+        "family": state.get("family", root_node.get("family", "")),
+        "type": root_node.get("type", ""),
+        "name": root_node.get("name", _path_label(state.get("path", ""))),
+        "nodeCount": network.get("nodeCount", len(network.get("nodes", []))),
+        "warningCount": network.get("warningCount", 0),
+        "hasDatSnapshot": bool(state.get("dat")),
+    }
+
+
+def _disconnect_input_connector(connector):
+    failures = []
+    for connection in list(getattr(connector, "connections", [])):
+        source = getattr(connection, "owner", None)
+        disconnected = False
+        if source is not None:
+            for output_connector in getattr(source, "outputConnectors", []):
+                disconnect_fn = getattr(output_connector, "disconnect", None)
+                if not callable(disconnect_fn):
+                    continue
+                try:
+                    disconnect_fn(connection)
+                    disconnected = True
+                    break
+                except Exception:
+                    continue
+        if disconnected:
+            continue
+        try:
+            connector.connections.remove(connection)
+            disconnected = True
+        except Exception:
+            pass
+        if not disconnected:
+            failures.append(str(source.path) if source is not None else "unknown")
+    return failures
+
+
+def _apply_operator_snapshot(target, node):
+    failures = []
+    if "nodeX" in node:
+        target.nodeX = node.get("nodeX", target.nodeX)
+    if "nodeY" in node:
+        target.nodeY = node.get("nodeY", target.nodeY)
+    if "comment" in node:
+        target.comment = node.get("comment", "") or ""
+
+    for pname, pdata in node.get("parameters", {}).items():
+        p = getattr(target.par, pname, None)
+        if p is None:
+            failures.append(
+                {
+                    "path": target.path,
+                    "parameter": pname,
+                    "error": "Parameter not found",
+                }
+            )
+            continue
+        try:
+            expression = pdata.get("expression")
+            if expression:
+                p.expr = expression
+            else:
+                if hasattr(p, "expr") and getattr(p, "expr", ""):
+                    p.expr = ""
+                p.val = _restore_snapshot_value(pdata)
+        except Exception as e:
+            failures.append({"path": target.path, "parameter": pname, "error": str(e)})
+    return failures
+
+
+def _restore_input_connections(target, node):
+    failures = []
+    desired_inputs = {}
+    for entry in node.get("inputs", []):
+        desired_inputs.setdefault(entry.get("index", 0), []).append(entry)
+
+    for index, connector in enumerate(getattr(target, "inputConnectors", [])):
+        for orphan in _disconnect_input_connector(connector):
+            failures.append(
+                {
+                    "targetPath": target.path,
+                    "targetIndex": index,
+                    "error": f"Could not fully disconnect existing input from {orphan}",
+                }
+            )
+        for entry in desired_inputs.get(index, []):
+            source = op(entry.get("sourcePath", ""))
+            if source is None:
+                failures.append(
+                    {
+                        "targetPath": target.path,
+                        "targetIndex": index,
+                        "sourcePath": entry.get("sourcePath", ""),
+                        "error": "Source not found",
+                    }
+                )
+                continue
+            source_index = entry.get("sourceIndex", 0)
+            try:
+                source.outputConnectors[source_index].connect(target.inputConnectors[index])
+            except Exception as e:
+                failures.append(
+                    {
+                        "targetPath": target.path,
+                        "targetIndex": index,
+                        "sourcePath": source.path,
+                        "sourceIndex": source_index,
+                        "error": str(e),
+                    }
+                )
+    return failures
+
+
+def _restore_target_state(state):
+    snapshot = state.get("network", {})
+    root_path = state.get("path", snapshot.get("rootPath", ""))
+    if not root_path:
+        return _error("Rollback snapshot is missing target path")
+
+    root_node = _snapshot_root_node(snapshot)
+    current = op(root_path)
+    recreate = False
+    if current is not None and root_node:
+        recreate = (
+            getattr(current, "type", None) != root_node.get("type")
+            or getattr(current, "family", None) != root_node.get("family")
+        )
+        if recreate:
+            current.destroy()
+            current = None
+
+    parameter_failures = []
+    connection_failures = []
+
+    if current is None:
+        parent_path = "/".join(root_path.rsplit("/", 1)[:-1]) or "/"
+        result = _import_network_snapshot(
+            snapshot, parent_path, create_backup=False, clear_existing=False
+        )
+        if not result.get("success", False):
+            return result
+        data = result.get("data", {})
+        parameter_failures.extend(data.get("parameterFailures", []))
+        connection_failures.extend(data.get("connectionFailures", []))
+        current = op(root_path)
+    else:
+        parameter_failures.extend(_apply_operator_snapshot(current, root_node))
+        descendants = [
+            node for node in snapshot.get("nodes", []) if node.get("path") != root_path
+        ]
+        if descendants:
+            if not getattr(current, "isCOMP", False):
+                return _error(
+                    f"Cannot restore descendant network into non-COMP target: {root_path}"
+                )
+            _clear_children(current)
+            child_snapshot = {
+                "version": snapshot.get("version", 2),
+                "rootPath": root_path,
+                "exportTime": snapshot.get("exportTime"),
+                "tdVersion": snapshot.get("tdVersion"),
+                "tdBuild": snapshot.get("tdBuild"),
+                "nodes": descendants,
+                "nodeCount": len(descendants),
+                "warningCount": sum(
+                    len(node.get("parameterErrors", [])) for node in descendants
+                ),
+            }
+            result = _import_network_snapshot(
+                child_snapshot, root_path, create_backup=False, clear_existing=False
+            )
+            if not result.get("success", False):
+                return result
+            data = result.get("data", {})
+            parameter_failures.extend(data.get("parameterFailures", []))
+            connection_failures.extend(data.get("connectionFailures", []))
+        current = op(root_path)
+
+    if current is None:
+        return _error(f"Failed to restore target: {root_path}")
+
+    connection_failures.extend(_restore_input_connections(current, root_node))
+
+    dat_failures = []
+    if state.get("dat") and getattr(current, "family", "") == "DAT":
+        try:
+            _apply_dat_snapshot(current, state.get("dat", {}))
+        except Exception as e:
+            dat_failures.append(str(e))
+
+    warning_count = len(parameter_failures) + len(connection_failures) + len(dat_failures)
+    return _success(
+        f"Restored harness snapshot for {root_path}",
+        {
+            "rollbackTarget": root_path,
+            "restoredPath": root_path,
+            "recreated": recreate,
+            "parameterFailures": parameter_failures,
+            "connectionFailures": connection_failures,
+            "datFailures": dat_failures,
+            "warningCount": warning_count,
+        },
+    )
+
+
+def _build_monitor_metrics(target, limit=20):
+    step = (
+        getattr(absTime, "stepSeconds", 0)
+        if hasattr(absTime, "stepSeconds")
+        else 0
+    )
+    if not step:
+        step = 0.0167
+
+    metrics = {
+        "fps": getattr(project, "cookRate", 0),
+        "actualFps": round(1.0 / step, 1) if step > 0 else 0,
+        "frame": getattr(absTime, "frame", None),
+        "seconds": round(getattr(absTime, "seconds", 0), 3),
+        "realTime": getattr(project, "realTime", None),
+    }
+
+    child_metrics = []
+    children = target.findChildren(depth=1) if hasattr(target, "findChildren") else []
+    for child in children:
+        if child.name == "TDCliServer":
+            continue
+        entry = {
+            "path": child.path,
+            "name": child.name,
+            "type": child.type,
+            "family": child.family,
+        }
+        if hasattr(child, "cookTime"):
+            try:
+                entry["cookTime"] = round(child.cookTime() * 1000, 3)
+            except Exception:
+                pass
+        if hasattr(child, "cpuCookTime"):
+            try:
+                entry["cpuCookTime"] = round(child.cpuCookTime() * 1000, 3)
+            except Exception:
+                pass
+        errors = _get_operator_messages(child, "errors")
+        warnings = _get_operator_messages(child, "warnings")
+        if errors:
+            entry["errors"] = errors
+        if warnings:
+            entry["warnings"] = warnings
+        child_metrics.append(entry)
+
+    child_metrics.sort(key=lambda item: item.get("cookTime", 0), reverse=True)
+    metrics["children"] = child_metrics[:limit]
+    return metrics
+
+
+def _build_observation_payload(target, depth=2, include_snapshot=False):
+    snapshot = _serialize_network_snapshot(
+        target, depth, include_defaults=False, include_root=True
+    )
+    nodes = snapshot.get("nodes", [])
+    path_to_name = {node.get("path", ""): node.get("name", "") for node in nodes}
+    incoming = {}
+    outgoing = {}
+    edges = []
+    families = {}
+    semantic_nodes = []
+
+    for node in nodes:
+        node_path = node.get("path", "")
+        families[node.get("family", "")] = families.get(node.get("family", ""), 0) + 1
+        incoming.setdefault(node_path, 0)
+        outgoing.setdefault(node_path, 0)
+
+    for node in nodes:
+        target_path = node.get("path", "")
+        for input_entry in node.get("inputs", []):
+            source_path = input_entry.get("sourcePath", "")
+            edges.append(
+                {
+                    "sourcePath": source_path,
+                    "sourceName": path_to_name.get(source_path, _path_label(source_path)),
+                    "sourceIndex": input_entry.get("sourceIndex", 0),
+                    "targetPath": target_path,
+                    "targetName": node.get("name", _path_label(target_path)),
+                    "targetIndex": input_entry.get("index", 0),
+                }
+            )
+            outgoing[source_path] = outgoing.get(source_path, 0) + 1
+            incoming[target_path] = incoming.get(target_path, 0) + 1
+
+    issue_nodes = []
+    for node in nodes:
+        node_path = node.get("path", "")
+        target_op = op(node_path)
+        errors = _get_operator_messages(target_op, "errors")
+        warnings = _get_operator_messages(target_op, "warnings")
+        modified_params = sorted(node.get("parameters", {}).keys())
+        expression_params = [
+            name
+            for name, pdata in node.get("parameters", {}).items()
+            if pdata.get("expression")
+        ]
+        semantic = {
+            "path": node_path,
+            "name": node.get("name", _path_label(node_path)),
+            "type": node.get("type", ""),
+            "family": node.get("family", ""),
+            "comment": node.get("comment", ""),
+            "modifiedParameterCount": len(modified_params),
+            "modifiedParameters": modified_params[:25],
+            "expressionParameters": expression_params[:25],
+            "inputCount": incoming.get(node_path, 0),
+            "outputCount": outgoing.get(node_path, 0),
+        }
+        if target_op is not None and getattr(target_op, "family", "") == "TOP":
+            semantic["width"] = getattr(target_op, "width", 0)
+            semantic["height"] = getattr(target_op, "height", 0)
+        if errors:
+            semantic["errors"] = errors
+        if warnings:
+            semantic["warnings"] = warnings
+        if errors or warnings:
+            issue_nodes.append(
+                {
+                    "path": node_path,
+                    "errors": errors,
+                    "warnings": warnings,
+                }
+            )
+        semantic_nodes.append(semantic)
+
+    graph_paths = set(path_to_name.keys())
+    root_paths = [path for path in graph_paths if incoming.get(path, 0) == 0]
+    leaf_paths = [path for path in graph_paths if outgoing.get(path, 0) == 0]
+    isolated_paths = [
+        path
+        for path in graph_paths
+        if incoming.get(path, 0) == 0 and outgoing.get(path, 0) == 0
+    ]
+
+    def _trace_chain(path, visited=None, max_depth=16):
+        if visited is None:
+            visited = set()
+        if path in visited:
+            return [_path_label(path) + "(loop)"]
+        visited.add(path)
+        chain = [_path_label(path)]
+        if max_depth <= 0:
+            return chain
+        next_paths = [
+            edge["targetPath"] for edge in edges if edge.get("sourcePath") == path
+        ]
+        if next_paths:
+            chain.extend(_trace_chain(next_paths[0], visited, max_depth - 1))
+        return chain
+
+    data_flow = []
+    for path in root_paths[:10]:
+        chain = _trace_chain(path)
+        if len(chain) > 1:
+            data_flow.append(" -> ".join(chain))
+
+    output_candidates = []
+    for node in semantic_nodes:
+        score = 0
+        reasons = []
+        name_lower = node.get("name", "").lower()
+        if node.get("family") == "TOP":
+            score += 4
+            reasons.append("top")
+        if node.get("outputCount", 0) == 0:
+            score += 2
+            reasons.append("leaf")
+        if any(
+            token in name_lower
+            for token in ("out", "null", "render", "display", "window", "viewer", "final")
+        ):
+            score += 2
+            reasons.append("output-like-name")
+        if score <= 0:
+            continue
+        candidate = {
+            "path": node.get("path", ""),
+            "name": node.get("name", ""),
+            "type": node.get("type", ""),
+            "family": node.get("family", ""),
+            "score": score,
+            "reasons": reasons,
+        }
+        if "width" in node:
+            candidate["width"] = node.get("width")
+            candidate["height"] = node.get("height")
+        output_candidates.append(candidate)
+
+    output_candidates.sort(key=lambda item: (-item.get("score", 0), item.get("path", "")))
+    target_errors = _get_operator_messages(target, "errors")
+    target_warnings = _get_operator_messages(target, "warnings")
+
+    activity_prefix = (
+        target.path.rstrip("/") + "/" if target.path not in ("", "/") else "/"
+    )
+    payload = {
+        "path": target.path,
+        "timestamp": time.time(),
+        "project": {
+            "name": getattr(project, "name", ""),
+            "folder": getattr(project, "folder", ""),
+            "tdVersion": getattr(app, "version", ""),
+            "tdBuild": getattr(app, "build", ""),
+            "timelineFrame": getattr(absTime, "frame", None),
+            "timelineSeconds": getattr(absTime, "seconds", 0),
+            "fps": getattr(project, "cookRate", 0),
+            "realTime": getattr(project, "realTime", None),
+        },
+        "target": {
+            "path": target.path,
+            "name": target.name,
+            "type": target.type,
+            "family": target.family,
+            "isCOMP": bool(getattr(target, "isCOMP", False)),
+            "errors": target_errors,
+            "warnings": target_warnings,
+        },
+        "graph": {
+            "nodeCount": snapshot.get("nodeCount", len(nodes)),
+            "connectionCount": len(edges),
+            "families": families,
+            "roots": root_paths,
+            "leaves": leaf_paths,
+            "isolated": isolated_paths,
+            "dataFlow": data_flow,
+        },
+        "nodes": semantic_nodes,
+        "connections": edges,
+        "issues": {
+            "targetErrors": target_errors,
+            "targetWarnings": target_warnings,
+            "issueCount": len(issue_nodes),
+            "nodes": issue_nodes[:20],
+        },
+        "outputs": output_candidates[:10],
+        "performance": _build_monitor_metrics(target, limit=10),
+        "recentActivity": [
+            event
+            for event in _read_log_events(limit=100)
+            if event.get("targetPath", "").startswith(activity_prefix)
+            or event.get("targetPath", "") == target.path
+        ][-10:],
+        "snapshotSummary": {
+            "version": snapshot.get("version", 2),
+            "warningCount": snapshot.get("warningCount", 0),
+        },
+    }
+    if include_snapshot:
+        payload["snapshot"] = snapshot
+    return payload
+
+
+def _build_verification_evidence(target, depth=2, include_observation=False):
+    evidence = {
+        "path": target.path,
+        "name": target.name,
+        "type": target.type,
+        "family": target.family,
+        "exists": True,
+        "parentPath": target.parent().path
+        if hasattr(target, "parent") and target.parent() is not None
+        else "",
+        "errors": _get_operator_messages(target, "errors"),
+        "warnings": _get_operator_messages(target, "warnings"),
+        "inputCount": sum(
+            len(getattr(connector, "connections", []))
+            for connector in getattr(target, "inputConnectors", [])
+        ),
+        "outputCount": sum(
+            len(getattr(connector, "connections", []))
+            for connector in getattr(target, "outputConnectors", [])
+        ),
+    }
+
+    modified_params = []
+    expression_params = []
+    for p in target.pars() if hasattr(target, "pars") else []:
+        try:
+            if hasattr(p, "expr") and p.expr:
+                expression_params.append(p.name)
+            if hasattr(p, "default") and not _snapshot_values_equal(p.val, p.default):
+                modified_params.append(p.name)
+        except Exception:
+            continue
+
+    evidence["modifiedParameters"] = modified_params
+    evidence["expressionParameters"] = expression_params
+    evidence["childCount"] = (
+        len(target.findChildren(depth=1)) if getattr(target, "isCOMP", False) else 0
+    )
+
+    if target.family == "TOP":
+        evidence["width"] = getattr(target, "width", 0)
+        evidence["height"] = getattr(target, "height", 0)
+    elif target.family == "CHOP":
+        evidence["numChannels"] = getattr(target, "numChans", 0)
+        evidence["numSamples"] = getattr(target, "numSamples", 0)
+        evidence["sampleRate"] = getattr(target, "rate", 0)
+    elif target.family == "SOP":
+        evidence["numPoints"] = getattr(target, "numPoints", 0)
+        evidence["numPrims"] = getattr(target, "numPrims", 0)
+        evidence["numVerts"] = getattr(target, "numVertices", 0)
+    elif target.family == "DAT":
+        dat_snapshot = _snapshot_dat(target)
+        evidence["isTable"] = dat_snapshot.get("isTable", False)
+        evidence["numRows"] = dat_snapshot.get("numRows", 0)
+        evidence["numCols"] = dat_snapshot.get("numCols", 0)
+        if dat_snapshot.get("isTable"):
+            evidence["tablePreview"] = dat_snapshot.get("table", [])[:5]
+        else:
+            evidence["contentPreview"] = (dat_snapshot.get("content", "") or "")[:500]
+    else:
+        try:
+            evidence["numPoints"] = target.numPoints()
+            evidence["numPrims"] = target.numPrims()
+            evidence["numVerts"] = target.numVerts()
+        except Exception:
+            pass
+
+    if include_observation or getattr(target, "isCOMP", False):
+        observation = _build_observation_payload(target, depth=depth, include_snapshot=False)
+        evidence["observation"] = {
+            "graph": observation.get("graph", {}),
+            "issues": observation.get("issues", {}),
+            "outputs": observation.get("outputs", []),
+            "performance": observation.get("performance", {}),
+        }
+    return evidence
+
+
+def _evaluate_assertion(target, evidence, assertion):
+    kind = assertion.get("kind", "")
+    passed = True
+    actual = None
+    details = []
+
+    def _normalized(value):
+        return _snapshot_value(value)[0]
+
+    def _compare(value):
+        reasons = []
+        normalized_value = _normalized(value)
+        if "equals" in assertion and normalized_value != _normalized(assertion.get("equals")):
+            reasons.append(f"expected {assertion.get('equals')}, got {value}")
+        if "min" in assertion:
+            try:
+                if value < assertion.get("min"):
+                    reasons.append(f"expected >= {assertion.get('min')}, got {value}")
+            except Exception:
+                reasons.append("min comparison unsupported")
+        if "max" in assertion:
+            try:
+                if value > assertion.get("max"):
+                    reasons.append(f"expected <= {assertion.get('max')}, got {value}")
+            except Exception:
+                reasons.append("max comparison unsupported")
+        if "contains" in assertion:
+            container = value if isinstance(value, (list, tuple, str)) else str(value)
+            if assertion.get("contains") not in container:
+                reasons.append(f"missing {assertion.get('contains')}")
+        if "oneOf" in assertion and value not in assertion.get("oneOf", []):
+            reasons.append(f"{value} not in {assertion.get('oneOf', [])}")
+        return reasons
+
+    if kind == "exists":
+        actual = True
+        details = _compare(True)
+    elif kind == "family":
+        actual = evidence.get("family")
+        details = _compare(actual)
+    elif kind == "type":
+        actual = evidence.get("type")
+        details = _compare(actual)
+    elif kind == "name":
+        actual = evidence.get("name")
+        details = _compare(actual)
+    elif kind == "param":
+        param_name = assertion.get("name", "")
+        param = getattr(target.par, param_name, None)
+        if param is None:
+            actual = None
+            details = [f"parameter not found: {param_name}"]
+        else:
+            actual = param.val
+            details = _compare(actual)
+    elif kind == "expression":
+        param_name = assertion.get("name", "")
+        param = getattr(target.par, param_name, None)
+        if param is None:
+            actual = None
+            details = [f"parameter not found: {param_name}"]
+        else:
+            actual = getattr(param, "expr", "") or ""
+            details = _compare(actual)
+    elif kind == "childCount":
+        actual = evidence.get("childCount", 0)
+        details = _compare(actual)
+    elif kind == "nodeCount":
+        actual = evidence.get("observation", {}).get("graph", {}).get("nodeCount", 0)
+        details = _compare(actual)
+    elif kind == "errorCount":
+        actual = len(evidence.get("errors", []))
+        details = _compare(actual)
+    elif kind == "warningCount":
+        actual = len(evidence.get("warnings", []))
+        details = _compare(actual)
+    elif kind == "inputCount":
+        actual = evidence.get("inputCount", 0)
+        details = _compare(actual)
+    elif kind == "outputCount":
+        actual = evidence.get("outputCount", 0)
+        details = _compare(actual)
+    elif kind == "hasChild":
+        name = assertion.get("name", "")
+        path = assertion.get("path", "")
+        children = target.findChildren(depth=1) if getattr(target, "isCOMP", False) else []
+        actual = [
+            child.path
+            for child in children
+            if (name and child.name == name) or (path and child.path == path)
+        ]
+        details = [] if actual else [f"child not found: {path or name}"]
+    else:
+        actual = None
+        details = [f"unsupported assertion kind: {kind}"]
+
+    passed = len(details) == 0
+    return {
+        "kind": kind,
+        "passed": passed,
+        "actual": actual,
+        "expected": {
+            key: assertion[key]
+            for key in ("equals", "min", "max", "contains", "oneOf", "name", "path")
+            if key in assertion
+        },
+        "details": details,
+    }
+
+
+def _list_harness_history(limit=20, target_path=""):
+    iterations_dir = _harness_iterations_dir()
+    if not os.path.isdir(iterations_dir):
+        return []
+
+    records = []
+    for entry in os.listdir(iterations_dir):
+        if not entry.endswith(".json"):
+            continue
+        path = os.path.join(iterations_dir, entry)
+        try:
+            record = _read_json_file(path)
+        except Exception:
+            continue
+        if target_path and record.get("targetPath", "") != target_path:
+            continue
+        records.append(
+            {
+                "id": record.get("id", entry[:-5]),
+                "createdAt": record.get("createdAt", 0),
+                "updatedAt": record.get("updatedAt", record.get("createdAt", 0)),
+                "status": record.get("status", ""),
+                "targetPath": record.get("targetPath", ""),
+                "goal": record.get("goal", ""),
+                "iteration": record.get("iteration"),
+                "operationCount": len(record.get("operations", [])),
+                "failureCount": len(
+                    [result for result in record.get("results", []) if not result.get("success", False)]
+                ),
+                "beforeSummary": record.get("beforeSummary", {}),
+                "afterSummary": record.get("afterSummary", {}),
+                "recordPath": path,
+                "rolledBackAt": record.get("rolledBackAt"),
+            }
+        )
     records.sort(key=lambda item: item.get("createdAt", 0), reverse=True)
     return records[:limit]
 
@@ -1775,6 +2515,281 @@ def handle_network_describe(body):
     return _success(f"Network: {summary}", description)
 
 
+# --- harness ---
+
+
+def handle_harness_capabilities(body):
+    """Report connector and harness capabilities for agent orchestration."""
+    tool_routes = sorted(schema.get("route", "") for schema in TOOL_SCHEMAS if schema.get("route"))
+    route_namespaces = {}
+    for route in tool_routes:
+        namespace = route.strip("/").split("/", 1)[0] if route.strip("/") else ""
+        route_namespaces[namespace] = route_namespaces.get(namespace, 0) + 1
+
+    family_support = {
+        "COMP": ["ops/*", "network/*", "backup/*", "harness/*", "tox/*"],
+        "TOP": ["screenshot", "media/*", "shaders/apply", "cook/*"],
+        "CHOP": ["chop/*", "cook/*"],
+        "SOP": ["sop/*", "cook/*"],
+        "DAT": ["dat/*", "table/*"],
+        "POP": ["pop/*"],
+        "TIMELINE": ["timeline/*"],
+        "UI": ["ui/*"],
+    }
+
+    data = {
+        "connector": {
+            "name": CONNECTOR_NAME,
+            "version": CONNECTOR_VERSION,
+            "protocolVersion": PROTOCOL_VERSION,
+            "installMode": CONNECTOR_INSTALL_MODE,
+        },
+        "runtime": {
+            "projectName": getattr(project, "name", ""),
+            "projectPath": _project_path(),
+            "tdVersion": getattr(app, "version", ""),
+            "tdBuild": getattr(app, "build", ""),
+            "timelineFrame": getattr(absTime, "frame", None),
+            "timelineSeconds": getattr(absTime, "seconds", 0),
+            "harnessRoot": _harness_root_dir(),
+        },
+        "tools": {
+            "count": len(TOOL_SCHEMAS),
+            "routes": tool_routes,
+            "namespaces": route_namespaces,
+        },
+        "support": {
+            "families": family_support,
+            "rollback": True,
+            "history": True,
+            "observe": True,
+            "verify": True,
+            "batchRoutes": ["/batch/exec", "/batch/parset"],
+        },
+    }
+    return _success("Harness capabilities", data)
+
+
+def handle_harness_observe(body):
+    """Return semantic network state for an agent loop."""
+    path = body.get("path", "/")
+    depth = body.get("depth", 2)
+    include_snapshot = body.get("includeSnapshot", False)
+
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+
+    payload = _build_observation_payload(
+        target, depth=depth, include_snapshot=include_snapshot
+    )
+    return _success(
+        f"Observed {payload['graph']['nodeCount']} node(s) at {path}", payload
+    )
+
+
+def handle_harness_verify(body):
+    """Return evidence and assertion results for a target path."""
+    path = body.get("path", "")
+    depth = body.get("depth", 2)
+    assertions = body.get("assertions", [])
+    include_observation = body.get("includeObservation", False)
+
+    if not path:
+        return _error("path required")
+
+    target = op(path)
+    if target is None:
+        return _error(f"Operator not found: {path}")
+
+    evidence = _build_verification_evidence(
+        target, depth=depth, include_observation=include_observation
+    )
+    assertion_results = [
+        _evaluate_assertion(target, evidence, assertion) for assertion in assertions
+    ]
+    passed = all(result.get("passed", False) for result in assertion_results)
+
+    return _success(
+        f"Verification {'passed' if passed else 'failed'} for {path}",
+        {
+            "path": path,
+            "passed": passed,
+            "assertionCount": len(assertion_results),
+            "passedCount": len(
+                [result for result in assertion_results if result.get("passed", False)]
+            ),
+            "evidence": evidence,
+            "assertions": assertion_results,
+        },
+    )
+
+
+def handle_harness_apply(body):
+    """Snapshot a target path, execute operations, and persist rollback state."""
+    target_path = body.get("targetPath", "")
+    commands_list = body.get("operations", [])
+    snapshot_depth = body.get("snapshotDepth", 20)
+    stop_on_error = body.get("stopOnError", True)
+
+    if not target_path:
+        return _error("targetPath required")
+    if not commands_list:
+        return _error("operations list required")
+
+    target = op(target_path)
+    if target is None:
+        return _error(f"Target not found: {target_path}")
+
+    blocked_routes = {"/harness/apply", "/harness/rollback"}
+    for command in commands_list:
+        route = command.get("route", "")
+        if route not in ROUTE_TABLE:
+            return _error(f"Unknown route in harness apply: {route}")
+        if route in blocked_routes:
+            return _error(f"Nested harness mutation is not allowed: {route}")
+
+    before_state = _snapshot_target_state(target, depth=snapshot_depth)
+    before_summary = _summarize_target_state(before_state)
+    rollback_id = f"{time.time_ns()}-harness"
+    record = {
+        "id": rollback_id,
+        "kind": "harness-iteration",
+        "createdAt": time.time(),
+        "updatedAt": time.time(),
+        "projectName": getattr(project, "name", ""),
+        "projectPath": _project_path(),
+        "targetPath": target_path,
+        "goal": body.get("goal", ""),
+        "note": body.get("note", ""),
+        "iteration": body.get("iteration"),
+        "status": "running",
+        "operations": commands_list,
+        "snapshotBefore": before_state,
+        "beforeSummary": before_summary,
+        "results": [],
+    }
+    rollback_id, record_path = _write_harness_record(record)
+
+    results = []
+    failed = False
+    for index, command in enumerate(commands_list):
+        route = command.get("route", "")
+        command_body = command.get("body", {})
+        result = handle_request(route, command_body)
+        success = bool(result.get("success", False))
+        results.append(
+            {
+                "index": index,
+                "route": route,
+                "body": command_body,
+                "success": success,
+                "message": result.get("message", ""),
+                "data": result.get("data"),
+            }
+        )
+        if not success:
+            failed = True
+            if stop_on_error:
+                break
+
+    current_target = op(target_path)
+    after_summary = (
+        _summarize_target_state(_snapshot_target_state(current_target, depth=snapshot_depth))
+        if current_target is not None
+        else {"path": target_path, "missing": True}
+    )
+
+    record.update(
+        {
+            "updatedAt": time.time(),
+            "status": "failed" if failed else "applied",
+            "results": results,
+            "afterSummary": after_summary,
+        }
+    )
+    _write_json_file(record_path, record)
+    _append_harness_event(
+        {
+            "timestamp": time.time(),
+            "id": rollback_id,
+            "event": "apply",
+            "status": record["status"],
+            "targetPath": target_path,
+            "operationCount": len(results),
+            "projectName": getattr(project, "name", ""),
+        }
+    )
+
+    response_data = {
+        "rollbackId": rollback_id,
+        "recordPath": record_path,
+        "targetPath": target_path,
+        "status": record["status"],
+        "beforeSummary": before_summary,
+        "afterSummary": after_summary,
+        "results": results,
+    }
+    if failed:
+        return _error(f"Harness apply failed for {target_path}", response_data)
+    return _success(f"Harness apply completed for {target_path}", response_data)
+
+
+def handle_harness_rollback(body):
+    """Restore a previous harness snapshot by rollback id."""
+    rollback_id = body.get("id", "")
+    if not rollback_id:
+        return _error("id required")
+
+    record, record_path = _read_harness_record(rollback_id)
+    if record is None:
+        return _error(f"Harness rollback not found: {rollback_id}", {"recordPath": record_path})
+
+    state = record.get("snapshotBefore", {})
+    result = _restore_target_state(state)
+    record["updatedAt"] = time.time()
+    record["rolledBackAt"] = record["updatedAt"]
+    record["status"] = "rolled_back" if result.get("success", False) else "rollback_failed"
+    record["rollbackResult"] = {
+        "success": result.get("success", False),
+        "message": result.get("message", ""),
+        "data": result.get("data"),
+    }
+    _write_json_file(record_path, record)
+    _append_harness_event(
+        {
+            "timestamp": time.time(),
+            "id": rollback_id,
+            "event": "rollback",
+            "status": record["status"],
+            "targetPath": record.get("targetPath", ""),
+            "projectName": getattr(project, "name", ""),
+        }
+    )
+
+    data = result.get("data", {})
+    if not isinstance(data, dict):
+        data = {"value": data}
+    data.update({"rollbackId": rollback_id, "recordPath": record_path})
+    result["data"] = data
+    return result
+
+
+def handle_harness_history(body):
+    """List recent harness iterations for the current project."""
+    limit = body.get("limit", 20)
+    try:
+        limit = int(limit)
+    except Exception:
+        limit = 20
+    if limit <= 0:
+        limit = 20
+
+    target_path = body.get("targetPath", "")
+    history = _list_harness_history(limit=limit, target_path=target_path)
+    return _success(f"Found {len(history)} harness iteration(s)", {"iterations": history})
+
+
 # --- monitor ---
 
 
@@ -1786,47 +2801,7 @@ def handle_monitor(body):
     if target is None:
         return _error(f"Operator not found: {path}")
 
-    step = (
-        absTime.stepSeconds
-        if hasattr(absTime, "stepSeconds") and absTime.stepSeconds > 0
-        else 0.0167
-    )
-
-    metrics = {
-        "fps": project.cookRate,
-        "actualFps": round(1.0 / step, 1) if step > 0 else 0,
-        "frame": absTime.frame,
-        "seconds": round(absTime.seconds, 2),
-        "realTime": project.realTime,
-    }
-
-    # Per-child performance metrics
-    children = target.findChildren(depth=1)
-    child_metrics = []
-    for child in children:
-        if child.name == "TDCliServer":
-            continue
-        cm = {
-            "name": child.name,
-            "type": child.type,
-            "family": child.family,
-        }
-        if hasattr(child, "cookTime"):
-            cm["cookTime"] = round(child.cookTime() * 1000, 3)  # ms
-        if hasattr(child, "cpuCookTime"):
-            cm["cpuCookTime"] = round(child.cpuCookTime() * 1000, 3)
-        errs = child.errors(recurse=False) if hasattr(child, "errors") else ""
-        warns = child.warnings(recurse=False) if hasattr(child, "warnings") else ""
-        if errs:
-            cm["errors"] = errs
-        if warns:
-            cm["warnings"] = warns
-        child_metrics.append(cm)
-
-    # Sort by cook time descending
-    child_metrics.sort(key=lambda x: x.get("cookTime", 0), reverse=True)
-    metrics["children"] = child_metrics[:20]
-
+    metrics = _build_monitor_metrics(target, limit=20)
     return _success("Monitor data", metrics)
 
 
@@ -4021,9 +4996,220 @@ TOOL_SCHEMAS = [
             },
         ],
     },
+    {
+        "name": "harness/capabilities",
+        "route": "/harness/capabilities",
+        "description": "Report connector, protocol, tool, and family support for agent harnesses",
+        "parameters": [],
+    },
+    {
+        "name": "harness/observe",
+        "route": "/harness/observe",
+        "description": "Return semantic network state for an agent loop",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": False,
+                "description": "Target path to observe (default: /)",
+            },
+            {
+                "name": "depth",
+                "type": "integer",
+                "required": False,
+                "description": "Observation depth (default: 2)",
+            },
+            {
+                "name": "includeSnapshot",
+                "type": "boolean",
+                "required": False,
+                "description": "Include structural snapshot payload",
+            },
+        ],
+    },
+    {
+        "name": "harness/verify",
+        "route": "/harness/verify",
+        "description": "Return assertion-friendly evidence for a target path",
+        "parameters": [
+            {
+                "name": "path",
+                "type": "string",
+                "required": True,
+                "description": "Target path to verify",
+            },
+            {
+                "name": "depth",
+                "type": "integer",
+                "required": False,
+                "description": "Observation depth for COMP targets (default: 2)",
+            },
+            {
+                "name": "assertions",
+                "type": "array",
+                "required": False,
+                "description": "Assertions such as exists/family/type/param/childCount/nodeCount/errorCount",
+            },
+            {
+                "name": "includeObservation",
+                "type": "boolean",
+                "required": False,
+                "description": "Include observation summary in evidence",
+            },
+        ],
+    },
+    {
+        "name": "harness/apply",
+        "route": "/harness/apply",
+        "description": "Snapshot a target, execute existing route operations, and persist rollback state",
+        "parameters": [
+            {
+                "name": "targetPath",
+                "type": "string",
+                "required": True,
+                "description": "Target path whose pre-state should be snapshotted",
+            },
+            {
+                "name": "operations",
+                "type": "array",
+                "required": True,
+                "description": "Array of {route, body} operations using existing routes",
+            },
+            {
+                "name": "snapshotDepth",
+                "type": "integer",
+                "required": False,
+                "description": "Snapshot depth used for rollback capture (default: 20)",
+            },
+            {
+                "name": "stopOnError",
+                "type": "boolean",
+                "required": False,
+                "description": "Stop execution after the first failed operation (default: true)",
+            },
+            {
+                "name": "goal",
+                "type": "string",
+                "required": False,
+                "description": "Optional goal label stored with the harness iteration",
+            },
+        ],
+    },
+    {
+        "name": "harness/rollback",
+        "route": "/harness/rollback",
+        "description": "Restore a prior harness snapshot by rollback id",
+        "parameters": [
+            {
+                "name": "id",
+                "type": "string",
+                "required": True,
+                "description": "Rollback id returned from harness/apply",
+            },
+        ],
+    },
+    {
+        "name": "harness/history",
+        "route": "/harness/history",
+        "description": "List recent harness iterations for the current project",
+        "parameters": [
+            {
+                "name": "limit",
+                "type": "integer",
+                "required": False,
+                "description": "Maximum number of iterations to return (default: 20)",
+            },
+            {
+                "name": "targetPath",
+                "type": "string",
+                "required": False,
+                "description": "Optional exact target path filter",
+            },
+        ],
+    },
 ]
 
 
 def handle_tools_list(body):
     """Return schemas for all registered tools, enabling AI agent discovery."""
     return _success(f"{len(TOOL_SCHEMAS)} tools available", {"tools": TOOL_SCHEMAS})
+
+
+ROUTE_TABLE = {
+    "/exec": handle_exec,
+    "/ops/list": handle_ops_list,
+    "/ops/create": handle_ops_create,
+    "/ops/delete": handle_ops_delete,
+    "/ops/info": handle_ops_info,
+    "/ops/rename": handle_ops_rename,
+    "/ops/copy": handle_ops_copy,
+    "/ops/move": handle_ops_move,
+    "/ops/clone": handle_ops_clone,
+    "/ops/search": handle_ops_search,
+    "/par/get": handle_par_get,
+    "/par/set": handle_par_set,
+    "/par/pulse": handle_par_pulse,
+    "/par/reset": handle_par_reset,
+    "/par/expr": handle_par_expr,
+    "/par/export": handle_par_export,
+    "/par/import": handle_par_import,
+    "/connect": handle_connect,
+    "/disconnect": handle_disconnect,
+    "/dat/read": handle_dat_read,
+    "/dat/write": handle_dat_write,
+    "/project/info": handle_project_info,
+    "/project/save": handle_project_save,
+    "/screenshot": handle_screenshot,
+    "/network/export": handle_network_export,
+    "/network/import": handle_network_import,
+    "/backup/list": handle_backup_list,
+    "/backup/restore": handle_backup_restore,
+    "/logs/list": handle_logs_list,
+    "/logs/tail": handle_logs_tail,
+    "/network/describe": handle_network_describe,
+    "/harness/capabilities": handle_harness_capabilities,
+    "/harness/observe": handle_harness_observe,
+    "/harness/verify": handle_harness_verify,
+    "/harness/apply": handle_harness_apply,
+    "/harness/rollback": handle_harness_rollback,
+    "/harness/history": handle_harness_history,
+    "/monitor": handle_monitor,
+    "/shaders/apply": handle_shaders_apply,
+    "/tox/export": handle_tox_export,
+    "/tox/import": handle_tox_import,
+    "/tools/list": handle_tools_list,
+    "/chop/info": handle_chop_info,
+    "/chop/channels": handle_chop_channels,
+    "/chop/sample": handle_chop_sample,
+    "/sop/info": handle_sop_info,
+    "/sop/points": handle_sop_points,
+    "/sop/attribs": handle_sop_attribs,
+    "/pop/info": handle_pop_info,
+    "/pop/points": handle_pop_points,
+    "/pop/prims": handle_pop_prims,
+    "/pop/verts": handle_pop_verts,
+    "/pop/bounds": handle_pop_bounds,
+    "/pop/attributes": handle_pop_attributes,
+    "/pop/save": handle_pop_save,
+    "/table/rows": handle_table_rows,
+    "/table/cell": handle_table_cell,
+    "/table/append": handle_table_append,
+    "/table/delete": handle_table_delete,
+    "/timeline/info": handle_timeline_info,
+    "/timeline/play": handle_timeline_play,
+    "/timeline/pause": handle_timeline_pause,
+    "/timeline/seek": handle_timeline_seek,
+    "/timeline/range": handle_timeline_range,
+    "/timeline/rate": handle_timeline_rate,
+    "/cook/node": handle_cook_node,
+    "/cook/network": handle_cook_network,
+    "/ui/navigate": handle_ui_navigate,
+    "/ui/select": handle_ui_select,
+    "/ui/pulse": handle_ui_pulse,
+    "/batch/exec": handle_batch_exec,
+    "/batch/parset": handle_batch_parset,
+    "/media/info": handle_media_info,
+    "/media/export": handle_media_export,
+    "/media/record": handle_media_record,
+    "/media/snapshot": handle_media_snapshot,
+}
