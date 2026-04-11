@@ -3,8 +3,11 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/td-cli/td-cli/internal/client"
+	"github.com/td-cli/td-cli/internal/poptemplates"
 )
 
 func PopInfo(c *client.Client, path string, jsonOutput bool) error {
@@ -212,6 +215,80 @@ func PopSave(c *client.Client, path, filepath string, jsonOutput bool) error {
 	json.Unmarshal(resp.Data, &data)
 	fmt.Printf("Saved to: %s\n", data.Filepath)
 	return nil
+}
+
+func PopAV(c *client.Client, templateKey, root, name string, jsonOutput bool) error {
+	tmpl, code, err := poptemplates.Render(templateKey, root, name)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.Call("/exec", map[string]string{"code": code})
+	if err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		payload := map[string]interface{}{
+			"template":   tmpl,
+			"root":       rootOrDefault(root),
+			"name":       nameOrDefault(name),
+			"preview":    tdChildPath(rootOrDefault(root), nameOrDefault(name)+"_preview"),
+			"outputTop":  tdChildPath(tdChildPath(rootOrDefault(root), nameOrDefault(name)), "out"),
+			"tdResponse": resp,
+		}
+		out, _ := json.MarshalIndent(payload, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("execution error: %s", resp.Message)
+	}
+
+	var result execResult
+	if resp.Data != nil {
+		json.Unmarshal(resp.Data, &result)
+	}
+
+	if result.Stdout != "" {
+		fmt.Print(result.Stdout)
+	}
+	if result.Result != "" {
+		fmt.Println(result.Result)
+	}
+	if result.Stderr != "" {
+		fmt.Fprintf(os.Stderr, "%s", result.Stderr)
+	}
+
+	rootPath := rootOrDefault(root)
+	baseName := nameOrDefault(name)
+	fmt.Printf("Applied POP template: %s\n", tmpl.Name)
+	fmt.Printf("  Scene:   %s\n", tdChildPath(rootPath, baseName))
+	fmt.Printf("  Preview: %s\n", tdChildPath(rootPath, baseName+"_preview"))
+	fmt.Printf("  Output:  %s\n", tdChildPath(tdChildPath(rootPath, baseName), "out"))
+	return nil
+}
+
+func tdChildPath(parent, child string) string {
+	if parent == "" || parent == "/" {
+		return "/" + strings.TrimPrefix(child, "/")
+	}
+	return strings.TrimRight(parent, "/") + "/" + strings.TrimPrefix(child, "/")
+}
+
+func rootOrDefault(root string) string {
+	if root == "" {
+		return "/project1"
+	}
+	return root
+}
+
+func nameOrDefault(name string) string {
+	if name == "" {
+		return "pop_audio_visual"
+	}
+	return name
 }
 
 func printPopData(raw json.RawMessage) {

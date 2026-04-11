@@ -98,6 +98,20 @@ td-cli dat read /project1/glsl1_pixel
 td-cli screenshot /project1/glsl1 -o glsl.png
 ```
 
+### POP Audio Visual Workflow
+
+If you want a ready-made POP scene for live audio, `td-cli` can build one directly under a safe container instead of rewriting the whole project root.
+
+```powershell
+td-cli pop av --root /project1 --name popAudioVisual
+td-cli screenshot /project1/popAudioVisual/out -o pop-av.png
+```
+
+This creates:
+
+- `/project1/popAudioVisual` with the audio CHOP chain, POP network, and TOP post-processing
+- `/project1/popAudioVisual_preview` as a preview container wired to the output TOP
+
 ### Beginner Install Guide
 
 #### 1. Prerequisites
@@ -243,6 +257,7 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli shaders list` | List shader templates |
 | `td-cli shaders get <name>` | Show shader template details |
 | `td-cli shaders apply <name> <glsl_top_path>` | Apply a shader template |
+| `td-cli pop av [audio-reactive] [--root /project1] [--name popAudioVisual]` | Build a POP audio reactive scene |
 | `td-cli docs` | Browse offline docs |
 | `td-cli docs <operator>` | Look up an operator |
 | `td-cli docs api [class]` | Read Python API docs |
@@ -386,6 +401,20 @@ td-cli shaders apply plasma /project1/glsl1
 td-cli dat read /project1/glsl1_pixel
 td-cli screenshot /project1/glsl1 -o glsl.png
 ```
+
+### POP 오디오 비주얼 워크플로
+
+라이브 오디오에 반응하는 POP 장면이 필요하면, 프로젝트 루트를 통째로 건드리지 않고 안전한 전용 컨테이너 아래에 바로 생성할 수 있습니다.
+
+```powershell
+td-cli pop av --root /project1 --name popAudioVisual
+td-cli screenshot /project1/popAudioVisual/out -o pop-av.png
+```
+
+이 명령은 아래 둘을 만듭니다.
+
+- `/project1/popAudioVisual`: 오디오 CHOP 체인, POP 네트워크, TOP 후처리
+- `/project1/popAudioVisual_preview`: 출력 TOP이 연결된 preview 컨테이너
 
 ### 초심자용 설치 가이드
 
@@ -534,6 +563,7 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli shaders list` | 셰이더 템플릿 목록 |
 | `td-cli shaders get <name>` | 셰이더 템플릿 상세 보기 |
 | `td-cli shaders apply <name> <glsl_top_path>` | 셰이더 템플릿 적용 |
+| `td-cli pop av [audio-reactive] [--root /project1] [--name popAudioVisual]` | POP 오디오 리액티브 장면 생성 |
 | `td-cli docs` | 내장 오프라인 문서 보기 |
 | `td-cli docs <operator>` | 오퍼레이터 문서 조회 |
 | `td-cli docs api [class]` | Python API 문서 조회 |

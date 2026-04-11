@@ -957,6 +957,7 @@ Commands:
   shaders list [--cat <cat>]     List shader templates
   shaders get <name>             Show shader template details
   shaders apply <name> <glsl>    Apply shader to GLSL TOP
+  pop av [--root <path>]         Build POP audio visual scene
   docs <operator>                Operator documentation
   docs search <keyword>          Search operators
   docs api [class]               Python API reference
@@ -1100,7 +1101,7 @@ func runSop(c *client.Client, args []string, jsonOutput bool) error {
 
 func runPop(c *client.Client, args []string, jsonOutput bool) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: td-cli pop <info|points|prims|verts|bounds|attributes|save> [args]")
+		return fmt.Errorf("usage: td-cli pop <info|points|prims|verts|bounds|attributes|save|av> [args]")
 	}
 	sub := args[0]
 	args = args[1:]
@@ -1186,8 +1187,31 @@ func runPop(c *client.Client, args []string, jsonOutput bool) error {
 			}
 		}
 		return commands.PopSave(c, args[0], filepath, jsonOutput)
+	case "av":
+		root := "/project1"
+		name := "pop_audio_visual"
+		template := "audio-reactive"
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--root":
+				if i+1 < len(args) {
+					root = args[i+1]
+					i++
+				}
+			case "--name":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			default:
+				if !strings.HasPrefix(args[i], "--") {
+					template = args[i]
+				}
+			}
+		}
+		return commands.PopAV(c, template, root, name, jsonOutput)
 	default:
-		return fmt.Errorf("unknown pop subcommand: %s (use info, points, prims, verts, bounds, attributes, save)", sub)
+		return fmt.Errorf("unknown pop subcommand: %s (use info, points, prims, verts, bounds, attributes, save, av)", sub)
 	}
 }
 

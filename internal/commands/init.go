@@ -191,6 +191,7 @@ td-cli sop points /project1/sphere1 --limit 100
 td-cli pop info /project1/grid1
 td-cli pop points /project1/grid1 --attr P --limit 100
 td-cli pop bounds /project1/grid1
+td-cli pop av --root /project1 --name popAudioVisual
 
 # Screenshot
 td-cli screenshot /project1/out1 -o output.png
