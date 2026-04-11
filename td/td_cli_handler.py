@@ -477,7 +477,6 @@ def handle_exec(body):
     if not code:
         return _error("No code provided")
 
-    # Capture stdout
     old_stdout = sys.stdout
     old_stderr = sys.stderr
     captured_out = io.StringIO()
@@ -487,16 +486,20 @@ def handle_exec(body):
 
     result_value = None
     try:
-        # If code starts with 'return', wrap in a function
+        import td as _td
+
+        exec_globals = globals().copy()
+        exec_globals["td"] = _td
+        exec_globals["_T"] = lambda n: getattr(_td, n)
         if code.strip().startswith("return"):
-            wrapped = f"def __td_cli_exec__():\n"
+            wrapped = "def __td_cli_exec__():\n"
             for line in code.split("\n"):
-                wrapped += f"    {line}\n"
+                wrapped += "    " + line + "\n"
             namespace = {}
-            exec(wrapped, globals(), namespace)
+            exec(wrapped, exec_globals, namespace)
             result_value = namespace["__td_cli_exec__"]()
         else:
-            exec(code)
+            exec(code, exec_globals)
     except Exception as e:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
