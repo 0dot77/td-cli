@@ -329,8 +329,101 @@ func runOps(c *client.Client, args []string, jsonOutput bool) error {
 		}
 		return commands.OpsInfo(c, args[0], jsonOutput)
 
+	case "rename":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops rename <path> <new-name>")
+		}
+		return commands.OpsRename(c, args[0], args[1], jsonOutput)
+
+	case "copy":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops copy <src> <parent> [--name <name>]")
+		}
+		name := ""
+		nodeX, nodeY := -1, -1
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--name":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			case "--x":
+				if i+1 < len(args) {
+					nodeX, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--y":
+				if i+1 < len(args) {
+					nodeY, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			}
+		}
+		return commands.OpsCopy(c, args[0], args[1], name, nodeX, nodeY, jsonOutput)
+
+	case "move":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops move <src> <parent>")
+		}
+		return commands.OpsMove(c, args[0], args[1], jsonOutput)
+
+	case "clone":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops clone <src> <parent> [--name <name>]")
+		}
+		name := ""
+		nodeX, nodeY := -1, -1
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--name":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			case "--x":
+				if i+1 < len(args) {
+					nodeX, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--y":
+				if i+1 < len(args) {
+					nodeY, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			}
+		}
+		return commands.OpsClone(c, args[0], args[1], name, nodeX, nodeY, jsonOutput)
+
+	case "search":
+		parent := "/"
+		pattern := ""
+		family := ""
+		depth := 10
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--family":
+				if i+1 < len(args) {
+					family = args[i+1]
+					i++
+				}
+			case "--depth":
+				if i+1 < len(args) {
+					depth, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			default:
+				if parent == "/" {
+					parent = args[i]
+				} else if pattern == "" {
+					pattern = args[i]
+				}
+			}
+		}
+		return commands.OpsSearch(c, parent, pattern, family, depth, jsonOutput)
+
 	default:
-		return fmt.Errorf("unknown ops subcommand: %s (use list, create, delete, info)", sub)
+		return fmt.Errorf("unknown ops subcommand: %s (use list, create, delete, info, rename, copy, move, clone, search)", sub)
 	}
 }
 
@@ -358,7 +451,6 @@ func runPar(c *client.Client, args []string, jsonOutput bool) error {
 		path := args[0]
 		params := make(map[string]interface{})
 		for i := 1; i+1 < len(args); i += 2 {
-			// Try to parse as number
 			if v, err := strconv.ParseFloat(args[i+1], 64); err == nil {
 				params[args[i]] = v
 			} else if args[i+1] == "true" {
@@ -371,8 +463,46 @@ func runPar(c *client.Client, args []string, jsonOutput bool) error {
 		}
 		return commands.ParSet(c, path, params, jsonOutput)
 
+	case "pulse":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli par pulse <op> <name>")
+		}
+		return commands.ParPulse(c, args[0], args[1], jsonOutput)
+
+	case "reset":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli par reset <op> [names...]")
+		}
+		return commands.ParReset(c, args[0], args[1:], jsonOutput)
+
+	case "expr":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli par expr <op> <name> [expression]")
+		}
+		expr := ""
+		if len(args) > 2 {
+			expr = args[2]
+		}
+		return commands.ParExpr(c, args[0], args[1], expr, jsonOutput)
+
+	case "export":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli par export <op>")
+		}
+		return commands.ParExport(c, args[0], jsonOutput)
+
+	case "import":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli par import <op> <json>")
+		}
+		var params []interface{}
+		if err := json.Unmarshal([]byte(args[1]), &params); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		return commands.ParImport(c, args[0], params, jsonOutput)
+
 	default:
-		return fmt.Errorf("unknown par subcommand: %s (use get, set)", sub)
+		return fmt.Errorf("unknown par subcommand: %s (use get, set, pulse, reset, expr, export, import)", sub)
 	}
 }
 
