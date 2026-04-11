@@ -13,14 +13,13 @@ import (
 	"github.com/td-cli/td-cli/internal/protocol"
 )
 
-// Client communicates with a TouchDesigner instance via HTTP.
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
 	Token      string
+	port       int
 }
 
-// New creates a Client for the given port with the specified timeout.
 func New(port int, timeout time.Duration) *Client {
 	return &Client{
 		BaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
@@ -28,7 +27,12 @@ func New(port int, timeout time.Duration) *Client {
 			Timeout: timeout,
 		},
 		Token: strings.TrimSpace(os.Getenv("TD_CLI_TOKEN")),
+		port:  port,
 	}
+}
+
+func (c *Client) Port() int {
+	return c.port
 }
 
 // Health checks the server health endpoint.

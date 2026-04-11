@@ -107,7 +107,18 @@ func main() {
 		}
 
 	case "init":
-		runInit()
+		if err := commands.Init(jsonOutput, port, 5000); err != nil {
+			fatal(err)
+		}
+
+	case "context":
+		c, err := getClient(port, project, timeout)
+		if err != nil {
+			fatal(err)
+		}
+		if err := commands.Context(c, jsonOutput); err != nil {
+			fatal(err)
+		}
 
 	case "docs":
 		if err := runDocs(cmdArgs, jsonOutput); err != nil {
@@ -734,134 +745,6 @@ func parseExecArgs(args []string) (code, filePath string) {
 	return
 }
 
-func runInit() {
-	claudeMD := `# TouchDesigner Project - Claude Code Integration
-
-## Available Tool: td-cli
-
-This project is connected to a live TouchDesigner instance via ` + "`td-cli`" + `.
-Use shell commands to control TouchDesigner.
-
-### Quick Reference
-
-` + "```" + `bash
-# Check connection
-td-cli status
-
-# Execute Python in TouchDesigner
-td-cli exec "print(op('/project1').findChildren())"
-
-# List operators
-td-cli ops list /project1
-td-cli ops list /project1 --depth 2 --family TOP
-
-# Create an operator (auto-positioned to avoid overlap)
-td-cli ops create noiseTOP /project1 --name myNoise
-td-cli ops create compositeTOP /project1 --name myComp --x 200 --y 0
-
-# Get operator info
-td-cli ops info /project1/myNoise
-
-# Set parameters
-td-cli par set /project1/myNoise rough 0.5 amp 1.0
-
-# Get parameters
-td-cli par get /project1/myNoise rough amp
-
-# Connect operators
-td-cli connect /project1/myNoise /project1/out1
-
-# Disconnect operators
-td-cli disconnect /project1/myNoise /project1/out1
-
-# Read/write DAT content
-td-cli dat read /project1/text1
-td-cli dat write /project1/text1 "hello world"
-td-cli dat write /project1/script1 -f myscript.py
-
-# Screenshot (save TOP output as PNG)
-td-cli screenshot /project1/out1 -o output.png
-
-# Project info and save
-td-cli project info
-td-cli project save
-` + "```" + `
-
-### Connector Boundary
-
-Treat ` + "`TDCliServer`" + ` as an installed connector, not as normal project code.
-For day-to-day AI or artist workflows:
-
-- install or drag-drop ` + "`tox/TDCliServer.tox`" + ` into the project
-- keep the component named ` + "`TDCliServer`" + `
-- use ` + "`td-cli`" + ` commands to inspect and modify the rest of the project
-- do **not** rewrite ` + "`/project1/TDCliServer/*`" + ` unless you are explicitly developing the connector itself
-
-The connector is the runtime bridge. Your working surface is the CLI.
-
-### Offline Documentation (629 operators + 69 Python API classes)
-
-` + "`td-cli docs`" + ` provides offline TouchDesigner documentation lookup:
-
-` + "```" + `bash
-# Lookup an operator
-td-cli docs noise_top
-td-cli docs noiseTOP
-
-# Search operators by keyword
-td-cli docs search noise
-td-cli docs search render --cat TOP
-
-# Python API class reference
-td-cli docs api OP
-td-cli docs api Par
-td-cli docs api CHOP
-
-# List all API classes
-td-cli docs api
-` + "```" + `
-
-Use this to look up parameter names, operator descriptions, and Python
-API methods when building TD networks.
-
-### TouchDesigner Concepts
-- Operators (OPs) are the building blocks: TOP (textures), CHOP (channels),
-  SOP (geometry), DAT (data/text), COMP (containers), MAT (materials)
-- Operators connect left-to-right (output -> input)
-- Parameters control operator behavior
-- Python scripting via ` + "`td`" + ` module: ` + "`op('/path')`" + `, ` + "`me`" + `, ` + "`parent()`" + `
-- Text DATs hold Python scripts — editable via ` + "`td-cli dat read/write`" + `
-- Use ` + "`td-cli exec`" + ` to run arbitrary Python inside TD for anything not covered by built-in commands
-
-### Operator Type Reference
-Common types: noiseTOP, constantTOP, compositeTOP, moviefileinTOP,
-textTOP, renderTOP, nullTOP, switchTOP, selectTOP, feedbackTOP,
-geometryCOMP, cameraCOMP, lightCOMP, baseCOMP, containerCOMP,
-waveCHOP, noiseCHOP, mathCHOP, nullCHOP, selectCHOP,
-textDAT, tableDAT, scriptDAT, webDAT,
-sphereSOP, boxSOP, gridSOP, noiseSOP, nullSOP
-
-### Global Flags
-- ` + "`--port <N>`" + ` — connect to specific port (default: auto-discover)
-- ` + "`--project <path>`" + ` — target specific TD project
-- ` + "`--json`" + ` — output raw JSON for parsing
-- ` + "`--timeout <ms>`" + ` — request timeout (default: 30000)
-
-### Tips
-- Use ` + "`td-cli exec`" + ` for complex operations not covered by built-in commands
-- Use ` + "`--json`" + ` flag when you need structured output to parse
-- Operator paths are absolute (e.g., /project1/myOp)
-- For ` + "`exec`" + `, prefix with ` + "`return`" + ` to get a value back
-- Parameter names in TD are abbreviated (e.g., ` + "`rough`" + ` not ` + "`roughness`" + `) — use ` + "`par get`" + ` to discover actual names
-- New operators are auto-positioned to avoid overlap; use ` + "`--x`" + `/` + "`--y`" + ` to override
-`
-
-	if err := os.WriteFile("CLAUDE.md", []byte(claudeMD), 0644); err != nil {
-		fatal(fmt.Errorf("failed to write CLAUDE.md: %w", err))
-	}
-	fmt.Println("Created CLAUDE.md with td-cli agent guidance")
-}
-
 func printUsage() {
 	usage := `td-cli v%s — TouchDesigner CLI for agents and artists
 
@@ -869,6 +752,7 @@ Usage: td-cli [flags] <command> [args]
 
 Commands:
   status                         Check TD connection
+  context                        Full project context (connection + network)
   instances                      List running TD instances
   exec <code>                    Execute Python in TD
   exec -f <file>                 Execute Python file
@@ -904,7 +788,7 @@ Commands:
   docs <operator>                Operator documentation
   docs search <keyword>          Search operators
   docs api [class]               Python API reference
-  init                           Generate CLAUDE.md
+  init                           Generate CLAUDE.md + AGENTS.md
   update                         Self-update from GitHub Releases
   version                        Show version
 
