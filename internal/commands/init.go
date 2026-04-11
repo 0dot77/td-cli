@@ -113,14 +113,33 @@ func fetchHealth(c *client.Client) (*protocol.HealthData, error) {
 	return &health, nil
 }
 
-func writeCLAUDEMD(health *protocol.HealthData, port int) error {
+func claudeMDContent(health *protocol.HealthData, port int) string {
 	projectInfo := ""
 	if health != nil {
 		projectInfo = fmt.Sprintf("\n## Project: %s\n\n- TD Version: %s (build %s)\n- Port: %d\n",
 			health.Project, health.TDVersion, health.TDBuild, port)
 	}
 
-	content := `# TouchDesigner Project - Agent Integration
+	harnessLoopSection := `
+## Planned Harness Loop
+
+If this branch exposes the upcoming top-level ` + "`harness`" + ` command, prefer it for agentic observe/apply/verify loops instead of long ad-hoc ` + "`exec`" + ` blobs.
+
+Expected surface for upcoming branches:
+
+` + "```" + `bash
+td-cli harness capabilities
+td-cli harness observe /project1
+td-cli harness apply plan.json
+td-cli harness verify run-123
+td-cli harness history
+td-cli harness rollback run-123
+` + "```" + `
+
+Use ` + "`td-cli help`" + ` to confirm the exact subcommand shape once the harness surface lands.
+`
+
+	return `# TouchDesigner Project - Agent Integration
 
 ## Auto-Discovery
 
@@ -132,7 +151,6 @@ You do NOT need to ask the user to use td-cli — use it directly.
 - Use td-cli commands directly for all TD operations
 - If connection is lost, ask: "Is TouchDesigner running?"
 ` + projectInfo + `
-
 ## Quick Reference
 
 ` + "```" + `bash
@@ -237,6 +255,7 @@ td-cli docs search render --cat TOP
 td-cli docs api OP             # Python API class
 td-cli docs api                # List all API classes
 ` + "```" + `
+` + harnessLoopSection + `
 
 ## TouchDesigner Concepts
 - Operators (OPs): TOP (textures), CHOP (channels), SOP (geometry, CPU),
@@ -269,11 +288,13 @@ gridPOP, spherePOP, noisePOP, transformPOP, nullPOP
 - Parameter names are abbreviated (e.g., ` + "`rough`" + ` not ` + "`roughness`" + `)
 - New operators are auto-positioned to avoid overlap
 `
-
-	return os.WriteFile("CLAUDE.md", []byte(content), 0644)
 }
 
-func writeAGENTSMD(health *protocol.HealthData, port int) error {
+func writeCLAUDEMD(health *protocol.HealthData, port int) error {
+	return os.WriteFile("CLAUDE.md", []byte(claudeMDContent(health, port)), 0644)
+}
+
+func agentsMDContent(health *protocol.HealthData, port int) string {
 	connectionBlock := ""
 	if health != nil {
 		connectionBlock = fmt.Sprintf(`## Auto-Detected Instance
@@ -284,7 +305,7 @@ func writeAGENTSMD(health *protocol.HealthData, port int) error {
 `, port, health.Project, health.TDVersion, health.TDBuild)
 	}
 
-	content := `# TouchDesigner Agent Configuration
+	return `# TouchDesigner Agent Configuration
 ` + connectionBlock + `## Before any TD operation
 ` + "```" + `bash
 td-cli status
@@ -301,9 +322,24 @@ td-cli context    # Full project overview (connection + network summary)
 - Check status before mutations
 - The connector (TDCliServer) is not to be modified
 - Use td-cli exec for anything not covered by built-in commands
-`
+ - If the branch adds the planned harness surface, prefer the structured loop below over large one-off exec calls
 
-	return os.WriteFile("AGENTS.md", []byte(content), 0644)
+## Planned Harness Loop
+` + "```" + `bash
+td-cli harness capabilities
+td-cli harness observe /project1
+td-cli harness apply plan.json
+td-cli harness verify run-123
+td-cli harness history
+td-cli harness rollback run-123
+` + "```" + `
+
+Confirm the exact command shape with ` + "`td-cli help`" + ` once the harness subcommands exist.
+`
+}
+
+func writeAGENTSMD(health *protocol.HealthData, port int) error {
+	return os.WriteFile("AGENTS.md", []byte(agentsMDContent(health, port)), 0644)
 }
 
 func writeClaudeCommands() error {
