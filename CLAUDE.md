@@ -239,10 +239,25 @@ Audio CHOPs (x: -1800 to -900)  |  POP chain (x: -400 to 500)  |  Render (x: 800
   sel_high (-1500, 300)         |  pop_out (500, 500)           |  render (1400,450) |  out1 (2600, 450)
 ```
 
+### feedbackTOP — Cook Loop Prevention (CRITICAL)
+NEVER wire feedbackTOP in a circular loop. Use `par.top` instead:
+```python
+# WRONG — causes cook dependency loop:
+#   glsl → comp[0], feedback → comp[1], comp → level → feedback (LOOP!)
+
+# CORRECT — feedback reads previous frame via par.top:
+feedback.par.top = comp_blend       # reference, not wire
+level_fade.inputConnectors[0].connect(feedback.outputConnectors[0])
+comp.inputConnectors[0].connect(glsl.outputConnectors[0])
+comp.inputConnectors[1].connect(level_fade.outputConnectors[0])
+```
+Pattern: `feedback.par.top = source` → `feedback → fade → comp[1]`, `input → comp[0]`
+
 ### Creating Networks — Checklist
 1. Always `import td` and use `td.lowercaseTypeCHOP` (not uppercase globals)
 2. Always set positions with `pos(op, x, y)` immediately after creation
 3. Connect inputs: `child.inputConnectors[0].connect(parent.outputConnectors[0])`
 4. For renderTOP: use `par.camera`, `par.geometry`, `par.lights` (not wire connections)
-5. For audio reactivity: use `par.expr = "op('math_bass')['chan1'] * 2.0"` (NOT `par.val`)
-6. Verify parameter names exist before setting — TD 099 has many gotchas (see table above)
+5. For feedbackTOP: use `par.top = target_op` (NOT wire connections — causes cook loop)
+6. For audio reactivity: use `par.expr = "op('math_bass')['chan1'] * 2.0"` (NOT `par.val`)
+7. Verify parameter names exist before setting — TD 099 has many gotchas (see table above)
