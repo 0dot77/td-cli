@@ -240,23 +240,30 @@ Audio CHOPs (x: -1800 to -900)  |  POP chain (x: -400 to 500)  |  Render (x: 800
 ```
 
 ### feedbackTOP — Correct Wiring Pattern (CRITICAL)
-feedbackTOP requires BOTH `par.top` AND wire input. It must be created fresh (not rewired from old state).
-The cook loop WARNING is expected and normal — feedbackTOP introduces a 1-frame delay internally.
+feedbackTOP uses `par.top` to reference a **previous frame** of another TOP.
+The `par.top` target must NOT depend on the feedback itself — otherwise cook dependency loop.
+feedbackTOP needs NO wire input; `par.top` is its sole source.
 ```python
-# Create fresh feedback nodes
-fb = container.create(_T('feedbackTOP'), 'fb')
-fb_fade = container.create(_T('levelTOP'), 'fb_fade')
-fb_fade.par.opacity = 0.92
+# WRONG — circular: fb.par.top points to node that depends on fb
+#   fb.par.top = comp; fb → fade → comp[1]; glsl → comp[0]  ← LOOP!
 
-# Wiring order matters — connect in this sequence:
-comp.inputConnectors[0].connect(glsl.outputConnectors[0])   # fresh input
-fb.par.top = comp                                             # prev frame target
-fb.inputConnectors[0].connect(comp.outputConnectors[0])       # wire input (required!)
-fb_fade.inputConnectors[0].connect(fb.outputConnectors[0])    # fade trail
-comp.inputConnectors[1].connect(fb_fade.outputConnectors[0])  # feed back into comp
+# CORRECT — fb.par.top points to an independent upstream node (no circular dependency)
+fb = container.create(_T('feedbackTOP'), 'fb')
+fb.par.top = glsl_main           # references glsl's PREVIOUS frame (no loop)
+fb.par.outputresolution = 'specified'
+fb.par.resolutionw = 1920
+fb.par.resolutionh = 1080
+
+fade = container.create(_T('levelTOP'), 'fb_fade')
+fade.par.opacity = 0.85
+fade.inputConnectors[0].connect(fb.outputConnectors[0])
+
+comp_trail = container.create(_T('compositeTOP'), 'comp_trail')
+comp_trail.par.operand = 'over'
+comp_trail.inputConnectors[0].connect(glsl.outputConnectors[0])   # current frame
+comp_trail.inputConnectors[1].connect(fade.outputConnectors[0])   # faded prev frame
 ```
-Pattern: `glsl → comp[0]`, `comp → fb(wire+par.top) → fade → comp[1]`
-WARNING "Cook dependency loop detected" is EXPECTED — do NOT try to eliminate it.
+Pattern: `fb(par.top=upstream) → fade → comp[1]`, `upstream → comp[0]` — NO circular dependency.
 
 ### Creating Networks — Checklist
 1. Always `import td` and use `td.lowercaseTypeCHOP` (not uppercase globals)
