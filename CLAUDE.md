@@ -240,30 +240,34 @@ Audio CHOPs (x: -1800 to -900)  |  POP chain (x: -400 to 500)  |  Render (x: 800
 ```
 
 ### feedbackTOP — Correct Wiring Pattern (CRITICAL)
-feedbackTOP uses `par.top` to reference a **previous frame** of another TOP.
-The `par.top` target must NOT depend on the feedback itself — otherwise cook dependency loop.
-feedbackTOP needs NO wire input; `par.top` is its sole source.
-```python
-# WRONG — circular: fb.par.top points to node that depends on fb
-#   fb.par.top = comp; fb → fade → comp[1]; glsl → comp[0]  ← LOOP!
+feedbackTOP needs BOTH `par.top` AND wire input from the SAME independent upstream node.
+- Wire input provides resolution and data source
+- `par.top` tells feedback which TOP's previous frame to capture
+- Target must NOT depend on feedback — otherwise cook dependency loop
+- Stale feedback nodes get stuck — always `destroy()` and create fresh
 
-# CORRECT — fb.par.top points to an independent upstream node (no circular dependency)
+```python
+# WRONG — circular: fb targets a node that depends on fb
+#   fb.par.top = comp; comp depends on fb  ← COOK LOOP!
+
+# WRONG — no wire input
+#   fb.par.top = glsl (only)  ← "Not enough sources" error!
+
+# CORRECT — wire + par.top to independent upstream node
 fb = container.create(_T('feedbackTOP'), 'fb')
-fb.par.top = glsl_main           # references glsl's PREVIOUS frame (no loop)
-fb.par.outputresolution = 'specified'
-fb.par.resolutionw = 1920
-fb.par.resolutionh = 1080
+fb.inputConnectors[0].connect(glsl.outputConnectors[0])  # wire first
+fb.par.top = glsl                                          # then par.top
 
 fade = container.create(_T('levelTOP'), 'fb_fade')
 fade.par.opacity = 0.85
 fade.inputConnectors[0].connect(fb.outputConnectors[0])
 
-comp_trail = container.create(_T('compositeTOP'), 'comp_trail')
-comp_trail.par.operand = 'over'
-comp_trail.inputConnectors[0].connect(glsl.outputConnectors[0])   # current frame
-comp_trail.inputConnectors[1].connect(fade.outputConnectors[0])   # faded prev frame
+comp = container.create(_T('compositeTOP'), 'comp_trail')
+comp.par.operand = 'over'
+comp.inputConnectors[0].connect(glsl.outputConnectors[0])   # current frame
+comp.inputConnectors[1].connect(fade.outputConnectors[0])   # faded prev frame
 ```
-Pattern: `fb(par.top=upstream) → fade → comp[1]`, `upstream → comp[0]` — NO circular dependency.
+Pattern: `glsl → fb(wire+par.top) → fade → comp[1]`, `glsl → comp[0]` — zero errors, zero warnings.
 
 ### Creating Networks — Checklist
 1. Always `import td` and use `td.lowercaseTypeCHOP` (not uppercase globals)
