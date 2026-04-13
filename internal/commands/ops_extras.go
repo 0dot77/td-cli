@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func OpsRename(c *client.Client, path, newName string, jsonOutput bool) error {
@@ -127,7 +127,9 @@ func OpsSearch(c *client.Client, parent, pattern, family string, depth int, json
 			Family string `json:"family"`
 		} `json:"operators"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	if len(data.Operators) == 0 {
 		fmt.Println("No operators found")
 		return nil

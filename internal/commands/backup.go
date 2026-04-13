@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 type backupRecord struct {
@@ -77,7 +77,9 @@ func BackupRestore(c *client.Client, id string, jsonOutput bool) error {
 
 	var data map[string]interface{}
 	if resp.Data != nil {
-		_ = json.Unmarshal(resp.Data, &data)
+		if err := json.Unmarshal(resp.Data, &data); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	fmt.Println(resp.Message)

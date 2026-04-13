@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/td-cli/td-cli/internal/client"
-	"github.com/td-cli/td-cli/internal/protocol"
+	"github.com/0dot77/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/protocol"
 )
 
 // Status checks connection to a TD instance and prints info.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func TableRows(c *client.Client, path string, start, end int, jsonOutput bool) error {
@@ -33,7 +33,9 @@ func TableRows(c *client.Client, path string, start, end int, jsonOutput bool) e
 		NumCols int        `json:"numCols"`
 		Rows    [][]string `json:"rows"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Table: %d rows x %d cols\n", data.NumRows, data.NumCols)
 	for i, row := range data.Rows {
 		fmt.Printf("  [%d] %v\n", i+start, row)
@@ -65,7 +67,9 @@ func TableCell(c *client.Client, path string, row, col int, value string, jsonOu
 		Col   int    `json:"col"`
 		Value string `json:"value"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("[%d,%d] = %s\n", data.Row, data.Col, data.Value)
 	return nil
 }
@@ -91,13 +95,17 @@ func TableAppend(c *client.Client, path, mode string, values []string, jsonOutpu
 		var data struct {
 			NumCols int `json:"numCols"`
 		}
-		json.Unmarshal(resp.Data, &data)
+		if err := json.Unmarshal(resp.Data, &data); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 		fmt.Printf("Col appended (%d cols)\n", data.NumCols)
 	} else {
 		var data struct {
 			NumRows int `json:"numRows"`
 		}
-		json.Unmarshal(resp.Data, &data)
+		if err := json.Unmarshal(resp.Data, &data); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 		fmt.Printf("Row appended (%d rows)\n", data.NumRows)
 	}
 	return nil

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 type datReadResult struct {
@@ -36,7 +36,9 @@ func DatRead(c *client.Client, path string, jsonOutput bool) error {
 
 	var result datReadResult
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &result)
+		if err := json.Unmarshal(resp.Data, &result); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	if result.IsTable && result.Table != nil {

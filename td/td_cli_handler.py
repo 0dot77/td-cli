@@ -1,6 +1,30 @@
 # td-cli Request Handler
 # Place this code in a Text DAT named 'handler' inside TDCliServer COMP
 # This module routes requests to the appropriate tool handlers
+#
+# === Section Index ===
+# Core & Routing ............ line ~20   (handle_request, _success, _error, helpers)
+# Exec ...................... line ~1230  (handle_exec)
+# Operators ................. line ~1287  (handle_ops_*)
+# Parameters ................ line ~1615  (handle_par_*)
+# Connections ............... line ~1807  (handle_connect, handle_disconnect)
+# DAT ....................... line ~1871  (handle_dat_*)
+# Project ................... line ~1949  (handle_project_*)
+# Screenshot & Media ........ line ~1982  (handle_screenshot, handle_media_*)
+# Network Serialization ..... line ~2280  (handle_network_*, _serialize_*, _deserialize_*)
+# Backup & Logs ............. line ~2308  (handle_backup_*, handle_logs_*)
+# Describe .................. line ~2429  (handle_network_describe)
+# Harness ................... line ~2539  (handle_harness_*)
+# Monitor & Shaders ......... line ~2824  (handle_monitor, handle_shaders_apply)
+# TOX ....................... line ~2912  (handle_tox_*)
+# CHOP ...................... line ~2983  (handle_chop_*)
+# SOP ....................... line ~3063  (handle_sop_*)
+# POP ....................... line ~3158  (handle_pop_*)
+# Table ..................... line ~3345  (handle_table_*)
+# Timeline .................. line ~3450  (handle_timeline_*)
+# Cook & UI ................. line ~3516  (handle_cook_*, handle_ui_*)
+# Batch ..................... line ~3596  (handle_batch_*)
+# Tools & Route Table ....... line ~5154  (handle_tools_list, ROUTE_TABLE)
 
 import json
 import sys

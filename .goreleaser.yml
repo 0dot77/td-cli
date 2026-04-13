@@ -1,0 +1,55 @@
+version: 2
+
+project_name: td-cli
+
+builds:
+  - main: ./cmd/td-cli/
+    binary: td-cli
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - tox/TDCliServer.tox
+  - id: raw
+    format: binary
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - repository:
+      owner: td-cli
+      name: homebrew-tap
+    homepage: https://github.com/0dot77/td-cli
+    description: TouchDesigner CLI for LLM agents, artists, and terminal workflows
+    license: MIT
+    install: |
+      bin.install "td-cli"

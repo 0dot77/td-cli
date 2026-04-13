@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 type opInfo struct {
@@ -47,7 +47,9 @@ func OpsList(c *client.Client, path string, depth int, family string, jsonOutput
 
 	var result opsListResult
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &result)
+		if err := json.Unmarshal(resp.Data, &result); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	if len(result.Operators) == 0 {
@@ -95,7 +97,9 @@ func OpsCreate(c *client.Client, opType, parent, name string, nodeX, nodeY int, 
 
 	var info opInfo
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &info)
+		if err := json.Unmarshal(resp.Data, &info); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	fmt.Printf("Created %s at %s\n", info.Type, info.Path)
@@ -143,7 +147,9 @@ func OpsInfo(c *client.Client, path string, jsonOutput bool) error {
 	// Parse and display structured info
 	var info map[string]interface{}
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &info)
+		if err := json.Unmarshal(resp.Data, &info); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	fmt.Printf("Operator: %s\n", info["path"])
@@ -154,24 +160,27 @@ func OpsInfo(c *client.Client, path string, jsonOutput bool) error {
 	if inputs, ok := info["inputs"].([]interface{}); ok && len(inputs) > 0 {
 		fmt.Println("  Inputs:")
 		for _, in := range inputs {
-			m := in.(map[string]interface{})
-			fmt.Printf("    [%v] %s\n", m["index"], m["path"])
+			if m, ok := in.(map[string]interface{}); ok {
+				fmt.Printf("    [%v] %s\n", m["index"], m["path"])
+			}
 		}
 	}
 
 	if outputs, ok := info["outputs"].([]interface{}); ok && len(outputs) > 0 {
 		fmt.Println("  Outputs:")
 		for _, out := range outputs {
-			m := out.(map[string]interface{})
-			fmt.Printf("    [%v] %s\n", m["index"], m["path"])
+			if m, ok := out.(map[string]interface{}); ok {
+				fmt.Printf("    [%v] %s\n", m["index"], m["path"])
+			}
 		}
 	}
 
 	if params, ok := info["parameters"].([]interface{}); ok {
 		fmt.Printf("  Parameters: (%d)\n", len(params))
 		for _, p := range params {
-			m := p.(map[string]interface{})
-			fmt.Printf("    %-20s = %s\n", m["name"], m["value"])
+			if m, ok := p.(map[string]interface{}); ok {
+				fmt.Printf("    %-20s = %s\n", m["name"], m["value"])
+			}
 		}
 	}
 

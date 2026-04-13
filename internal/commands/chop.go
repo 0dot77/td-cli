@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func ChopInfo(c *client.Client, path string, jsonOutput bool) error {
@@ -27,7 +27,9 @@ func ChopInfo(c *client.Client, path string, jsonOutput bool) error {
 		NumSamples  int     `json:"numSamples"`
 		SampleRate  float64 `json:"sampleRate"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("CHOP: %s (%s)\n", data.Name, data.Type)
 	fmt.Printf("  Channels: %d  Samples: %d  Rate: %.1f\n", data.NumChannels, data.NumSamples, data.SampleRate)
 	return nil
@@ -59,7 +61,9 @@ func ChopChannels(c *client.Client, path string, start, count int, jsonOutput bo
 			Values []float64 `json:"values"`
 		} `json:"channels"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	for _, ch := range data.Channels {
 		n := len(ch.Values)
 		if n > 5 {
@@ -93,7 +97,9 @@ func ChopSample(c *client.Client, path, channel string, index int, jsonOutput bo
 		Index   int     `json:"index"`
 		Value   float64 `json:"value"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("%s[%d] = %v\n", data.Channel, data.Index, data.Value)
 	return nil
 }

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
-	"github.com/td-cli/td-cli/internal/shaders"
+	"github.com/0dot77/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/shaders"
 )
 
 // ShadersList lists available shader templates (offline, no TD needed).
@@ -110,7 +110,9 @@ func ShadersApply(c *client.Client, name string, targetPath string, jsonOutput b
 	var result struct {
 		CompileWarnings string `json:"compileWarnings"`
 	}
-	json.Unmarshal(resp.Data, &result)
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 
 	fmt.Printf("Applied '%s' to %s\n", s.Name, targetPath)
 	if result.CompileWarnings != "" {

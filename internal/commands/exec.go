@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 type execResult struct {
@@ -47,7 +47,9 @@ func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verif
 
 	var result execResult
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &result)
+		if err := json.Unmarshal(resp.Data, &result); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	if result.Stdout != "" {
@@ -74,7 +76,10 @@ func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verif
 
 		var ssResult screenshotResult
 		if screenshotResp.Data != nil {
-			json.Unmarshal(screenshotResp.Data, &ssResult)
+			if err := json.Unmarshal(screenshotResp.Data, &ssResult); err != nil {
+				fmt.Fprintf(os.Stderr, "Screenshot warning: failed to parse response data: %s\n", err)
+				return nil
+			}
 		}
 
 		imgData, err := base64.StdEncoding.DecodeString(ssResult.Image)

@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/td-cli/td-cli/internal/protocol"
+	"github.com/0dot77/td-cli/internal/protocol"
 )
 
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
 	Token      string
+	Debug      bool
 	port       int
 }
 
@@ -43,13 +44,21 @@ func (c *Client) Health() (*protocol.Response, error) {
 	}
 	c.applyAuth(req)
 
+	if c.Debug {
+		fmt.Fprintf(os.Stderr, "[debug] GET %s/health\n", c.BaseURL)
+	}
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to TD at %s: %w", c.BaseURL, err)
 	}
 	defer resp.Body.Close()
 
-	return parseResponse(resp)
+	result, err := parseResponse(resp)
+	if c.Debug && err == nil {
+		fmt.Fprintf(os.Stderr, "[debug] <- %d %s\n", resp.StatusCode, truncateDebug(result.Message, 120))
+	}
+	return result, err
 }
 
 // Call sends a POST request to the given endpoint with a JSON body.
@@ -66,13 +75,25 @@ func (c *Client) Call(endpoint string, payload interface{}) (*protocol.Response,
 	req.Header.Set("Content-Type", "application/json")
 	c.applyAuth(req)
 
+	if c.Debug {
+		fmt.Fprintf(os.Stderr, "[debug] POST %s%s %s\n", c.BaseURL, endpoint, truncateDebug(string(body), 200))
+	}
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	return parseResponse(resp)
+	result, err := parseResponse(resp)
+	if c.Debug && err == nil {
+		dataStr := ""
+		if len(result.Data) > 0 {
+			dataStr = truncateDebug(string(result.Data), 200)
+		}
+		fmt.Fprintf(os.Stderr, "[debug] <- %d success=%v %s\n", resp.StatusCode, result.Success, dataStr)
+	}
+	return result, err
 }
 
 func (c *Client) applyAuth(req *http.Request) {
@@ -80,6 +101,13 @@ func (c *Client) applyAuth(req *http.Request) {
 		return
 	}
 	req.Header.Set("X-TD-CLI-Token", c.Token)
+}
+
+func truncateDebug(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 func parseResponse(resp *http.Response) (*protocol.Response, error) {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func BatchExec(c *client.Client, commands []map[string]interface{}, jsonOutput bool) error {
@@ -31,7 +31,9 @@ func BatchExec(c *client.Client, commands []map[string]interface{}, jsonOutput b
 			Message string `json:"message"`
 		} `json:"results"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Batch: %d/%d succeeded (%.2fms)\n", data.Success, data.Total, data.Duration)
 	for i, r := range data.Results {
 		status := "OK"
@@ -61,7 +63,9 @@ func BatchParSet(c *client.Client, sets []map[string]interface{}, jsonOutput boo
 		Success int `json:"success"`
 		Failed  int `json:"failed"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Batch par set: %d/%d succeeded\n", data.Success, data.Total)
 	return nil
 }

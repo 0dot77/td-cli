@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 // NetworkExport exports the network structure as a JSON snapshot.
@@ -33,7 +33,9 @@ func NetworkExport(c *client.Client, path string, outputFile string, depth int, 
 		var meta struct {
 			NodeCount int `json:"nodeCount"`
 		}
-		json.Unmarshal(resp.Data, &meta)
+		if err := json.Unmarshal(resp.Data, &meta); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 		fmt.Printf("Exported %d nodes to %s\n", meta.NodeCount, outputFile)
 		return nil
 	}
@@ -49,7 +51,9 @@ func NetworkExport(c *client.Client, path string, outputFile string, depth int, 
 		NodeCount int    `json:"nodeCount"`
 		RootPath  string `json:"rootPath"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Exported %d nodes from %s\n", data.NodeCount, data.RootPath)
 	fmt.Println("Use -o <file> to save to a file")
 	return nil

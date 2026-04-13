@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 // ToxExport exports a COMP as a .tox file.
@@ -33,7 +33,9 @@ func ToxExport(c *client.Client, compPath, outputPath string, jsonOutput bool) e
 		Output string `json:"output"`
 		Size   int64  `json:"size"`
 	}
-	json.Unmarshal(resp.Data, &result)
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 
 	fmt.Printf("Exported to %s (%d bytes)\n", result.Output, result.Size)
 	return nil

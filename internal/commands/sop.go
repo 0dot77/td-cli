@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func SopInfo(c *client.Client, path string, jsonOutput bool) error {
@@ -27,7 +27,9 @@ func SopInfo(c *client.Client, path string, jsonOutput bool) error {
 		NumPrims  int    `json:"numPrims"`
 		NumVerts  int    `json:"numVerts"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("SOP: %s (%s)\n", data.Name, data.Type)
 	fmt.Printf("  Points: %d  Prims: %d  Verts: %d\n", data.NumPoints, data.NumPrims, data.NumVerts)
 	return nil
@@ -58,7 +60,9 @@ func SopPoints(c *client.Client, path string, start, limit int, jsonOutput bool)
 			Z     float64 `json:"z"`
 		} `json:"points"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Points %d-%d of %d:\n", data.Points[0].Index, data.Points[len(data.Points)-1].Index, data.TotalPoints)
 	for _, p := range data.Points {
 		fmt.Printf("  [%d] %.4f %.4f %.4f\n", p.Index, p.X, p.Y, p.Z)
@@ -84,7 +88,9 @@ func SopAttribs(c *client.Client, path string, jsonOutput bool) error {
 		PrimitiveAttributes []string `json:"primitiveAttributes"`
 		VertexAttributes    []string `json:"vertexAttributes"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	if len(data.PointAttributes) > 0 {
 		fmt.Printf("  Point:  %v\n", data.PointAttributes)
 	}

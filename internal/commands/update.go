@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	githubRepo       = "td-cli/td-cli"
+	githubRepo       = "0dot77/td-cli"
 	updateAPIURL     = "https://api.github.com/repos/" + githubRepo + "/releases/latest"
 	maxBinarySize    = 100 * 1024 * 1024 // 100 MB max download
 	githubDomainHTTP = "https://github.com/"

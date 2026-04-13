@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func TimelineInfo(c *client.Client, jsonOutput bool) error {
@@ -31,7 +31,9 @@ func TimelineInfo(c *client.Client, jsonOutput bool) error {
 		IsCueEnabled bool    `json:"isCueEnabled"`
 		Signaled     bool    `json:"signaled"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	state := "paused"
 	if data.IsPlaying {
 		state = "playing"
@@ -147,7 +149,9 @@ func CookNode(c *client.Client, path string, jsonOutput bool) error {
 		CookTime float64 `json:"cookTime"`
 		Cooked   bool    `json:"cooked"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Cooked %s (%.2fms)\n", data.Path, data.CookTime)
 	return nil
 }
@@ -170,7 +174,9 @@ func CookNetwork(c *client.Client, path string, jsonOutput bool) error {
 		NodesCooked int     `json:"nodesCooked"`
 		TotalTime   float64 `json:"totalTime"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Cooked network %s: %d nodes in %.2fms\n", data.Path, data.NodesCooked, data.TotalTime)
 	return nil
 }

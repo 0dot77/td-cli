@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 type monitorResult struct {

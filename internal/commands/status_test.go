@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/td-cli/td-cli/internal/protocol"
+	"github.com/0dot77/td-cli/internal/protocol"
 )
 
 func TestFormatConnectorLineIncludesMode(t *testing.T) {

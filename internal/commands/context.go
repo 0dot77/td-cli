@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/td-cli/td-cli/internal/client"
-	"github.com/td-cli/td-cli/internal/protocol"
+	"github.com/0dot77/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/protocol"
 )
 
 type contextOpEntry struct {

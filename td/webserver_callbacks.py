@@ -67,10 +67,15 @@ def onHTTPRequest(dat: 'webserverDAT', request: Dict[str, Any],
     uri = request['uri']
     method = request['method']
 
-    # CORS headers for local development
-    response['Access-Control-Allow-Origin'] = '*'
+    # CORS headers — restrict to localhost origins only
+    origin = request.get('headers', {}).get('Origin', '') or request.get('headers', {}).get('origin', '')
+    allowed_origins = ('http://localhost', 'http://127.0.0.1', 'https://localhost', 'https://127.0.0.1')
+    if any(origin == o or origin.startswith(o + ':') for o in allowed_origins):
+        response['Access-Control-Allow-Origin'] = origin
+    else:
+        response['Access-Control-Allow-Origin'] = 'http://127.0.0.1'
     response['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response['Access-Control-Allow-Headers'] = 'Content-Type'
+    response['Access-Control-Allow-Headers'] = 'Content-Type, X-TD-CLI-Token, Authorization'
     response['content-type'] = 'application/json'
 
     if method == 'OPTIONS':

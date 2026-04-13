@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func MediaInfo(c *client.Client, path string, jsonOutput bool) error {
@@ -30,7 +30,9 @@ func MediaInfo(c *client.Client, path string, jsonOutput bool) error {
 		Codec     string  `json:"codec"`
 		FilePath  string  `json:"filePath"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Media: %s (%s)\n", data.Path, data.Type)
 	if data.Width > 0 {
 		fmt.Printf("  Resolution: %dx%d\n", data.Width, data.Height)
@@ -65,7 +67,9 @@ func MediaExport(c *client.Client, path, outputFile string, jsonOutput bool) err
 		Duration   float64 `json:"duration"`
 		FrameCount int     `json:"frameCount"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Exported: %s (%d frames, %.2fs)\n", data.OutputPath, data.FrameCount, data.Duration)
 	return nil
 }
@@ -114,7 +118,9 @@ func MediaSnapshot(c *client.Client, path, outputFile string, jsonOutput bool) e
 	var data struct {
 		OutputPath string `json:"outputPath"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Snapshot: %s\n", data.OutputPath)
 	return nil
 }

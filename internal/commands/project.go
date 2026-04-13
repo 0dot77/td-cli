@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 // ProjectInfo displays project metadata.
@@ -26,7 +26,9 @@ func ProjectInfo(c *client.Client, jsonOutput bool) error {
 
 	var info map[string]interface{}
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &info)
+		if err := json.Unmarshal(resp.Data, &info); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	fmt.Println("Project Info:")

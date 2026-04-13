@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 func ParPulse(c *client.Client, path, name string, jsonOutput bool) error {
@@ -72,7 +72,9 @@ func ParExpr(c *client.Client, path, name, expression string, jsonOutput bool) e
 		Expression string `json:"expression"`
 		Value      string `json:"value"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	if expression != "" {
 		fmt.Printf("Set expression: %s = %s (value: %s)\n", name, data.Expression, data.Value)
 	} else {
@@ -114,7 +116,9 @@ func ParImport(c *client.Client, path string, params []interface{}, jsonOutput b
 	var data struct {
 		Applied int `json:"applied"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Imported %d parameters to %s\n", data.Applied, path)
 	return nil
 }

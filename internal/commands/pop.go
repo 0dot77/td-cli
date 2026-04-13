@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/td-cli/td-cli/internal/client"
-	"github.com/td-cli/td-cli/internal/poptemplates"
+	"github.com/0dot77/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/poptemplates"
 )
 
 func PopInfo(c *client.Client, path string, jsonOutput bool) error {
@@ -32,7 +32,9 @@ func PopInfo(c *client.Client, path string, jsonOutput bool) error {
 		Dimension       string   `json:"dimension"`
 		PointAttributes []string `json:"pointAttributes"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("POP: %s (%s)\n", data.Name, data.Type)
 	fmt.Printf("  Points: %d  Prims: %d  Verts: %d\n", data.NumPoints, data.NumPrims, data.NumVerts)
 	if data.Dimension != "" {
@@ -67,8 +69,7 @@ func PopPoints(c *client.Client, path, attr string, start, count int, jsonOutput
 		fmt.Println(string(out))
 		return nil
 	}
-	printPopData(resp.Data)
-	return nil
+	return printPopData(resp.Data)
 }
 
 func PopPrims(c *client.Client, path, attr string, start, count int, jsonOutput bool) error {
@@ -94,8 +95,7 @@ func PopPrims(c *client.Client, path, attr string, start, count int, jsonOutput 
 		fmt.Println(string(out))
 		return nil
 	}
-	printPopData(resp.Data)
-	return nil
+	return printPopData(resp.Data)
 }
 
 func PopVerts(c *client.Client, path, attr string, start, count int, jsonOutput bool) error {
@@ -121,8 +121,7 @@ func PopVerts(c *client.Client, path, attr string, start, count int, jsonOutput 
 		fmt.Println(string(out))
 		return nil
 	}
-	printPopData(resp.Data)
-	return nil
+	return printPopData(resp.Data)
 }
 
 func PopBounds(c *client.Client, path string, jsonOutput bool) error {
@@ -152,7 +151,9 @@ func PopBounds(c *client.Client, path string, jsonOutput bool) error {
 		SizeY   float64 `json:"sizeY"`
 		SizeZ   float64 `json:"sizeZ"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Bounds:\n")
 	fmt.Printf("  Min:    %.4f %.4f %.4f\n", data.MinX, data.MinY, data.MinZ)
 	fmt.Printf("  Max:    %.4f %.4f %.4f\n", data.MaxX, data.MaxY, data.MaxZ)
@@ -179,7 +180,9 @@ func PopAttributes(c *client.Client, path string, jsonOutput bool) error {
 		PrimAttributes  []string `json:"primAttributes"`
 		VertAttributes  []string `json:"vertAttributes"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	if len(data.PointAttributes) > 0 {
 		fmt.Printf("  Point: %v\n", data.PointAttributes)
 	}
@@ -212,7 +215,9 @@ func PopSave(c *client.Client, path, filepath string, jsonOutput bool) error {
 	var data struct {
 		Filepath string `json:"filepath"`
 	}
-	json.Unmarshal(resp.Data, &data)
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("Saved to: %s\n", data.Filepath)
 	return nil
 }
@@ -248,7 +253,9 @@ func PopAV(c *client.Client, templateKey, root, name string, jsonOutput bool) er
 
 	var result execResult
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &result)
+		if err := json.Unmarshal(resp.Data, &result); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	if result.Stdout != "" {
@@ -291,14 +298,16 @@ func nameOrDefault(name string) string {
 	return name
 }
 
-func printPopData(raw json.RawMessage) {
+func printPopData(raw json.RawMessage) error {
 	var data struct {
 		Attribute string      `json:"attribute"`
 		Start     int         `json:"start"`
 		Count     int         `json:"count"`
 		Values    interface{} `json:"values"`
 	}
-	json.Unmarshal(raw, &data)
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return fmt.Errorf("failed to parse response data: %w", err)
+	}
 	fmt.Printf("%s (start=%d, count=%d)\n", data.Attribute, data.Start, data.Count)
 	switch v := data.Values.(type) {
 	case []interface{}:
@@ -311,4 +320,5 @@ func printPopData(raw json.RawMessage) {
 	default:
 		fmt.Printf("  %v\n", v)
 	}
+	return nil
 }

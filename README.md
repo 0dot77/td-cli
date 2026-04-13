@@ -156,7 +156,7 @@ Important: do not target a scope that contains `TDCliServer`. Use a child COMP s
 
 Option A: download a release binary
 
-1. Download `td-cli.exe` from [Releases](https://github.com/td-cli/td-cli/releases).
+1. Download `td-cli.exe` from [Releases](https://github.com/0dot77/td-cli/releases).
 2. Put it somewhere easy to find, for example `C:\Tools\td-cli\td-cli.exe`.
 3. Either run it by full path or add that folder to `PATH`.
 
@@ -169,7 +169,7 @@ C:\Tools\td-cli\td-cli.exe version
 Option B: install with Go
 
 ```powershell
-go install github.com/td-cli/td-cli/cmd/td-cli@latest
+go install github.com/0dot77/td-cli/cmd/td-cli@latest
 ```
 
 To build this repository directly:
@@ -291,6 +291,8 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli docs` | Browse offline docs |
 | `td-cli docs <operator>` | Look up an operator |
 | `td-cli docs api [class]` | Read Python API docs |
+| `td-cli init` | Generate CLAUDE.md + AGENTS.md for agent integration |
+| `td-cli doctor` | Diagnose setup and connection issues |
 | `td-cli update` | Self-update from GitHub Releases |
 | `td-cli version` | Show version |
 
@@ -299,9 +301,12 @@ td-cli exec "print(op('/project1').children)"
 - `--port <N>`: connect to a specific port
 - `--project <path>`: target a specific `.toe` project
 - `--json`: output raw JSON
+- `--debug`: log HTTP requests and responses to stderr
 - `--timeout <ms>`: change request timeout, default `30000`
 
 ### Troubleshooting
+
+Run `td-cli doctor` first — it checks the home directory, heartbeat files, port reachability, server health, and protocol version in one pass.
 
 If `td-cli status` reports no running TouchDesigner instances:
 
@@ -326,6 +331,23 @@ If the command is not found:
 
 - try the full path to `td-cli.exe`
 - if that works, add its folder to `PATH`
+
+### Security
+
+td-cli communicates with TouchDesigner over HTTP on `127.0.0.1` (localhost only). It is designed for local, single-user workflows.
+
+**Code execution:** The `td-cli exec` command runs arbitrary Python code inside the TouchDesigner process. This is by design — it gives agents and artists full scripting access. Anyone who can reach the HTTP port can execute code with the same permissions as the TouchDesigner process.
+
+**Authentication:** Set `TD_CLI_TOKEN` in both the shell and the TouchDesigner process environment to require HMAC token verification on every request. Without the token, any process on the same machine can use the API.
+
+**When to enable the token:**
+- Shared workstations where multiple users are logged in
+- Environments where untrusted code runs alongside TouchDesigner
+- Remote access via SSH tunnels
+
+**CORS:** The server only accepts requests from `localhost` and `127.0.0.1` origins. Cross-origin requests from other hosts are rejected.
+
+For typical local use (single user, single machine), running without a token is fine.
 
 ### Development
 
@@ -492,7 +514,7 @@ td-cli harness rollback 1712900000-harness
 
 방법 A: 릴리스 바이너리 다운로드
 
-1. [Releases](https://github.com/td-cli/td-cli/releases)에서 `td-cli.exe`를 내려받습니다.
+1. [Releases](https://github.com/0dot77/td-cli/releases)에서 `td-cli.exe`를 내려받습니다.
 2. 예를 들어 `C:\Tools\td-cli\td-cli.exe` 같이 찾기 쉬운 위치에 둡니다.
 3. 아래 둘 중 하나로 사용합니다.
    - 전체 경로로 실행
@@ -507,7 +529,7 @@ C:\Tools\td-cli\td-cli.exe version
 방법 B: Go로 설치
 
 ```powershell
-go install github.com/td-cli/td-cli/cmd/td-cli@latest
+go install github.com/0dot77/td-cli/cmd/td-cli@latest
 ```
 
 이 저장소를 직접 빌드하려면:
@@ -629,6 +651,8 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli docs` | 내장 오프라인 문서 보기 |
 | `td-cli docs <operator>` | 오퍼레이터 문서 조회 |
 | `td-cli docs api [class]` | Python API 문서 조회 |
+| `td-cli init` | 에이전트 연동용 CLAUDE.md + AGENTS.md 생성 |
+| `td-cli doctor` | 셋업 및 연결 문제 진단 |
 | `td-cli update` | GitHub Releases에서 자체 업데이트 |
 | `td-cli version` | 버전 표시 |
 
@@ -637,9 +661,12 @@ td-cli exec "print(op('/project1').children)"
 - `--port <N>`: 특정 포트로 직접 연결합니다
 - `--project <path>`: 특정 `.toe` 프로젝트를 대상으로 지정합니다
 - `--json`: 결과를 JSON으로 출력합니다
+- `--debug`: HTTP 요청/응답을 stderr에 출력합니다
 - `--timeout <ms>`: 요청 타임아웃을 변경합니다. 기본값은 `30000`
 
 ### 문제 해결
+
+먼저 `td-cli doctor`를 실행하세요 — 홈 디렉토리, heartbeat 파일, 포트 접근성, 서버 상태, 프로토콜 버전을 한번에 점검합니다.
 
 `td-cli status`에서 실행 중인 TouchDesigner 인스턴스가 없다고 나오는 경우:
 

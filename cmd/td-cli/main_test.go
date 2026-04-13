@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestParseExecArgsInlineCode(t *testing.T) {
-	code, filePath := parseExecArgs([]string{"print('hello')", "print('world')"})
+	code, filePath, _, _ := parseExecArgs([]string{"print('hello')", "print('world')"})
 
 	if got, want := code, "print('hello') print('world')"; got != want {
 		t.Fatalf("parseExecArgs code = %q, want %q", got, want)
@@ -14,7 +14,7 @@ func TestParseExecArgsInlineCode(t *testing.T) {
 }
 
 func TestParseExecArgsFileAndTrailingCode(t *testing.T) {
-	code, filePath := parseExecArgs([]string{"-f", "script.py", "print('ignored?')"})
+	code, filePath, _, _ := parseExecArgs([]string{"-f", "script.py", "print('ignored?')"})
 
 	if got, want := filePath, "script.py"; got != want {
 		t.Fatalf("parseExecArgs filePath = %q, want %q", got, want)
@@ -25,7 +25,7 @@ func TestParseExecArgsFileAndTrailingCode(t *testing.T) {
 }
 
 func TestParseExecArgsFileOnly(t *testing.T) {
-	code, filePath := parseExecArgs([]string{"-f", "script.py"})
+	code, filePath, _, _ := parseExecArgs([]string{"-f", "script.py"})
 
 	if got, want := filePath, "script.py"; got != want {
 		t.Fatalf("parseExecArgs filePath = %q, want %q", got, want)
@@ -36,7 +36,7 @@ func TestParseExecArgsFileOnly(t *testing.T) {
 }
 
 func TestParseExecArgsInlineCodeBeforeAndAfterFile(t *testing.T) {
-	code, filePath := parseExecArgs([]string{"print('before')", "-f", "script.py", "print('after')"})
+	code, filePath, _, _ := parseExecArgs([]string{"print('before')", "-f", "script.py", "print('after')"})
 
 	if got, want := filePath, "script.py"; got != want {
 		t.Fatalf("parseExecArgs filePath = %q, want %q", got, want)

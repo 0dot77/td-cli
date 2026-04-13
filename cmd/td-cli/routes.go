@@ -1,0 +1,1251 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/0dot77/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/commands"
+	"github.com/0dot77/td-cli/internal/docs"
+)
+
+func runCommand(c *client.Client, command string, args []string, jsonOutput bool) error {
+	switch command {
+	case "status":
+		return commands.Status(c, jsonOutput)
+
+	case "exec":
+		code, filePath, verifyPath, screenshotPath := parseExecArgs(args)
+		return commands.Exec(c, code, filePath, jsonOutput, verifyPath, screenshotPath)
+
+	case "ops":
+		return runOps(c, args, jsonOutput)
+
+	case "par":
+		return runPar(c, args, jsonOutput)
+
+	case "connect":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli connect <src> <dst> [--src-index N] [--dst-index N]")
+		}
+		srcIdx, dstIdx := 0, 0
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--src-index" && i+1 < len(args) {
+				srcIdx, _ = strconv.Atoi(args[i+1])
+			}
+			if args[i] == "--dst-index" && i+1 < len(args) {
+				dstIdx, _ = strconv.Atoi(args[i+1])
+			}
+		}
+		return commands.Connect(c, args[0], args[1], srcIdx, dstIdx, jsonOutput)
+
+	case "disconnect":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli disconnect <src> <dst>")
+		}
+		return commands.Disconnect(c, args[0], args[1], jsonOutput)
+
+	case "dat":
+		return runDat(c, args, jsonOutput)
+
+	case "screenshot":
+		path := ""
+		outputFile := ""
+		for i := 0; i < len(args); i++ {
+			if args[i] == "-o" && i+1 < len(args) {
+				outputFile = args[i+1]
+				i++
+			} else if path == "" {
+				path = args[i]
+			}
+		}
+		return commands.Screenshot(c, path, outputFile, jsonOutput)
+
+	case "project":
+		return runProject(c, args, jsonOutput)
+
+	case "backup":
+		return runBackup(c, args, jsonOutput)
+
+	case "logs":
+		return runLogs(c, args, jsonOutput)
+
+	case "tools":
+		if len(args) == 0 || args[0] == "list" {
+			return commands.ToolsList(c, jsonOutput)
+		}
+		return fmt.Errorf("unknown tools subcommand: %s (use list)", args[0])
+
+	case "tox":
+		return runTox(c, args, jsonOutput)
+
+	case "network":
+		return runNetwork(c, args, jsonOutput)
+
+	case "describe":
+		path := "/"
+		if len(args) > 0 {
+			path = args[0]
+		}
+		return commands.Describe(c, path, jsonOutput)
+
+	case "watch":
+		path := "/"
+		interval := 1 * time.Second
+		for i := 0; i < len(args); i++ {
+			if args[i] == "--interval" && i+1 < len(args) {
+				if ms, err := strconv.Atoi(args[i+1]); err == nil {
+					interval = time.Duration(ms) * time.Millisecond
+				}
+				i++
+			} else {
+				path = args[i]
+			}
+		}
+		return commands.Watch(c, path, interval, jsonOutput)
+
+	case "chop":
+		return runChop(c, args, jsonOutput)
+
+	case "sop":
+		return runSop(c, args, jsonOutput)
+
+	case "pop":
+		return runPop(c, args, jsonOutput)
+
+	case "table":
+		return runTable(c, args, jsonOutput)
+
+	case "timeline":
+		return runTimeline(c, args, jsonOutput)
+
+	case "cook":
+		return runCook(c, args, jsonOutput)
+
+	case "ui":
+		return runUi(c, args, jsonOutput)
+
+	case "batch":
+		return runBatch(c, args, jsonOutput)
+
+	case "media":
+		return runMedia(c, args, jsonOutput)
+
+	case "harness":
+		return runHarness(c, args, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown command: %s\nRun 'td-cli help' for usage", command)
+	}
+}
+
+func runOps(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli ops <list|create|delete|info> [args]")
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "list":
+		path := "/"
+		depth := 1
+		family := ""
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--depth":
+				if i+1 < len(args) {
+					depth, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--family":
+				if i+1 < len(args) {
+					family = args[i+1]
+					i++
+				}
+			default:
+				if path == "/" {
+					path = args[i]
+				}
+			}
+		}
+		return commands.OpsList(c, path, depth, family, jsonOutput)
+
+	case "create":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops create <type> <parent> [--name <name>] [--x N] [--y N]")
+		}
+		opType := args[0]
+		parent := args[1]
+		name := ""
+		nodeX, nodeY := -1, -1
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--name":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			case "--x":
+				if i+1 < len(args) {
+					nodeX, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--y":
+				if i+1 < len(args) {
+					nodeY, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			}
+		}
+		return commands.OpsCreate(c, opType, parent, name, nodeX, nodeY, jsonOutput)
+
+	case "delete":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli ops delete <path>")
+		}
+		return commands.OpsDelete(c, args[0], jsonOutput)
+
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli ops info <path>")
+		}
+		return commands.OpsInfo(c, args[0], jsonOutput)
+
+	case "rename":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops rename <path> <new-name>")
+		}
+		return commands.OpsRename(c, args[0], args[1], jsonOutput)
+
+	case "copy":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops copy <src> <parent> [--name <name>]")
+		}
+		name := ""
+		nodeX, nodeY := -1, -1
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--name":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			case "--x":
+				if i+1 < len(args) {
+					nodeX, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--y":
+				if i+1 < len(args) {
+					nodeY, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			}
+		}
+		return commands.OpsCopy(c, args[0], args[1], name, nodeX, nodeY, jsonOutput)
+
+	case "move":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops move <src> <parent>")
+		}
+		return commands.OpsMove(c, args[0], args[1], jsonOutput)
+
+	case "clone":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ops clone <src> <parent> [--name <name>]")
+		}
+		name := ""
+		nodeX, nodeY := -1, -1
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--name":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			case "--x":
+				if i+1 < len(args) {
+					nodeX, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--y":
+				if i+1 < len(args) {
+					nodeY, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			}
+		}
+		return commands.OpsClone(c, args[0], args[1], name, nodeX, nodeY, jsonOutput)
+
+	case "search":
+		parent := "/"
+		pattern := ""
+		family := ""
+		depth := 10
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--family":
+				if i+1 < len(args) {
+					family = args[i+1]
+					i++
+				}
+			case "--depth":
+				if i+1 < len(args) {
+					depth, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			default:
+				if parent == "/" {
+					parent = args[i]
+				} else if pattern == "" {
+					pattern = args[i]
+				}
+			}
+		}
+		return commands.OpsSearch(c, parent, pattern, family, depth, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown ops subcommand: %s (use list, create, delete, info, rename, copy, move, clone, search)", sub)
+	}
+}
+
+func runPar(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli par <get|set> <op> [args]")
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "get":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli par get <op> [param_names...]")
+		}
+		path := args[0]
+		names := args[1:]
+		return commands.ParGet(c, path, names, jsonOutput)
+
+	case "set":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: td-cli par set <op> <name> <value> [<name> <value>...]")
+		}
+		path := args[0]
+		params := make(map[string]interface{})
+		for i := 1; i+1 < len(args); i += 2 {
+			if v, err := strconv.ParseFloat(args[i+1], 64); err == nil {
+				params[args[i]] = v
+			} else if args[i+1] == "true" {
+				params[args[i]] = true
+			} else if args[i+1] == "false" {
+				params[args[i]] = false
+			} else {
+				params[args[i]] = args[i+1]
+			}
+		}
+		return commands.ParSet(c, path, params, jsonOutput)
+
+	case "pulse":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli par pulse <op> <name>")
+		}
+		return commands.ParPulse(c, args[0], args[1], jsonOutput)
+
+	case "reset":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli par reset <op> [names...]")
+		}
+		return commands.ParReset(c, args[0], args[1:], jsonOutput)
+
+	case "expr":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli par expr <op> <name> [expression]")
+		}
+		expr := ""
+		if len(args) > 2 {
+			expr = args[2]
+		}
+		return commands.ParExpr(c, args[0], args[1], expr, jsonOutput)
+
+	case "export":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli par export <op>")
+		}
+		return commands.ParExport(c, args[0], jsonOutput)
+
+	case "import":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli par import <op> <json>")
+		}
+		var params []interface{}
+		if err := json.Unmarshal([]byte(args[1]), &params); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		return commands.ParImport(c, args[0], params, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown par subcommand: %s (use get, set, pulse, reset, expr, export, import)", sub)
+	}
+}
+
+func runDat(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli dat <read|write> <path> [args]")
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "read":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli dat read <path>")
+		}
+		return commands.DatRead(c, args[0], jsonOutput)
+
+	case "write":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli dat write <path> <content> [-f <file>]")
+		}
+		path := args[0]
+		content := ""
+		filePath := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "-f" && i+1 < len(args) {
+				filePath = args[i+1]
+				i++
+			} else {
+				if content != "" {
+					content += " "
+				}
+				content += args[i]
+			}
+		}
+		return commands.DatWrite(c, path, content, filePath, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown dat subcommand: %s (use read, write)", sub)
+	}
+}
+
+func runProject(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return commands.ProjectInfo(c, jsonOutput)
+	}
+
+	switch args[0] {
+	case "info":
+		return commands.ProjectInfo(c, jsonOutput)
+	case "save":
+		path := ""
+		if len(args) > 1 {
+			path = args[1]
+		}
+		return commands.ProjectSave(c, path, jsonOutput)
+	default:
+		return fmt.Errorf("unknown project subcommand: %s (use info, save)", args[0])
+	}
+}
+
+func runBackup(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return commands.BackupList(c, 20, jsonOutput)
+	}
+
+	switch args[0] {
+	case "list":
+		limit := 20
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.BackupList(c, limit, jsonOutput)
+	case "restore":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli backup restore <backup-id>")
+		}
+		return commands.BackupRestore(c, args[1], jsonOutput)
+	default:
+		return fmt.Errorf("unknown backup subcommand: %s (use list, restore)", args[0])
+	}
+}
+
+func runLogs(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return commands.LogsTail(c, 20, jsonOutput)
+	}
+
+	switch args[0] {
+	case "list":
+		limit := 20
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.LogsList(c, limit, jsonOutput)
+	case "tail":
+		limit := 20
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.LogsTail(c, limit, jsonOutput)
+	default:
+		return fmt.Errorf("unknown logs subcommand: %s (use list, tail)", args[0])
+	}
+}
+
+func runTox(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli tox <export|import> [args]")
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "export":
+		compPath := ""
+		outputFile := ""
+		for i := 0; i < len(args); i++ {
+			if args[i] == "-o" && i+1 < len(args) {
+				outputFile = args[i+1]
+				i++
+			} else if compPath == "" {
+				compPath = args[i]
+			}
+		}
+		if compPath == "" || outputFile == "" {
+			return fmt.Errorf("usage: td-cli tox export <comp_path> -o <file.tox>")
+		}
+		return commands.ToxExport(c, compPath, outputFile, jsonOutput)
+
+	case "import":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli tox import <file.tox> [parent_path] [--name <name>]")
+		}
+		toxPath := args[0]
+		parentPath := "/project1"
+		name := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--name" && i+1 < len(args) {
+				name = args[i+1]
+				i++
+			} else {
+				parentPath = args[i]
+			}
+		}
+		return commands.ToxImport(c, toxPath, parentPath, name, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown tox subcommand: %s (use export, import)", sub)
+	}
+}
+
+func runNetwork(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli network <export|import> [args]")
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "export":
+		path := "/"
+		outputFile := ""
+		depth := 10
+		includeDefaults := false
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "-o":
+				if i+1 < len(args) {
+					outputFile = args[i+1]
+					i++
+				}
+			case "--depth":
+				if i+1 < len(args) {
+					depth, _ = strconv.Atoi(args[i+1])
+					i++
+				}
+			case "--include-defaults":
+				includeDefaults = true
+			default:
+				path = args[i]
+			}
+		}
+		return commands.NetworkExport(c, path, outputFile, depth, includeDefaults, jsonOutput)
+
+	case "import":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli network import <file> [target_path]")
+		}
+		filePath := args[0]
+		targetPath := "/"
+		if len(args) > 1 {
+			targetPath = args[1]
+		}
+		return commands.NetworkImport(c, filePath, targetPath, jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown network subcommand: %s (use export, import)", sub)
+	}
+}
+
+func runDocs(args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		cats := docs.ListCategories()
+		fmt.Println("TouchDesigner Documentation (629 operators, 69 Python API classes)")
+		fmt.Println("\nOperator categories:")
+		for cat, count := range cats {
+			fmt.Printf("  %-8s %d operators\n", cat, count)
+		}
+		fmt.Println("\nUsage:")
+		fmt.Println("  td-cli docs <operator>           Lookup operator (e.g., noise_top, noiseTOP)")
+		fmt.Println("  td-cli docs search <keyword>     Search operators")
+		fmt.Println("  td-cli docs search <kw> --cat TOP  Search within category")
+		fmt.Println("  td-cli docs api <class>          Python API class (e.g., OP, CHOP, Par)")
+		fmt.Println("  td-cli docs api                  List all Python API classes")
+		return nil
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "search":
+		if len(args) == 0 {
+			return fmt.Errorf("usage: td-cli docs search <keyword> [--cat TOP|CHOP|SOP|DAT|COMP|MAT]")
+		}
+		query := args[0]
+		category := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--cat" && i+1 < len(args) {
+				category = args[i+1]
+				i++
+			}
+		}
+		results := docs.SearchOperators(query, category, 20)
+		if len(results) == 0 {
+			fmt.Printf("No operators found for '%s'\n", query)
+			return nil
+		}
+		for _, r := range results {
+			sum := r.Summary
+			if len(sum) > 80 {
+				sum = sum[:80] + "..."
+			}
+			fmt.Printf("  %-6s %-30s %s\n", r.Category, r.Name, sum)
+		}
+		fmt.Printf("\n%d result(s). Use 'td-cli docs <name>' for details.\n", len(results))
+		return nil
+
+	case "api":
+		if len(args) == 0 {
+			classes := docs.ListAPIClasses()
+			fmt.Printf("Python API Classes (%d):\n", len(classes))
+			for i, name := range classes {
+				fmt.Printf("  %-20s", name)
+				if (i+1)%4 == 0 {
+					fmt.Println()
+				}
+			}
+			fmt.Println()
+			return nil
+		}
+		key, api := docs.LookupAPI(args[0])
+		if api == nil {
+			return fmt.Errorf("API class not found: %s", args[0])
+		}
+		if jsonOutput {
+			out, _ := json.MarshalIndent(api, "", "  ")
+			fmt.Println(string(out))
+		} else {
+			_ = key
+			fmt.Print(docs.FormatAPIClass(api))
+		}
+		return nil
+
+	default:
+		query := sub
+		key, op := docs.LookupOperator(query)
+		if op == nil {
+			results := docs.SearchOperators(query, "", 10)
+			if len(results) > 0 {
+				fmt.Printf("Operator '%s' not found. Did you mean:\n", query)
+				for _, r := range results {
+					fmt.Printf("  %-6s %s\n", r.Category, r.Name)
+				}
+				return nil
+			}
+			return fmt.Errorf("operator not found: %s", query)
+		}
+		if jsonOutput {
+			out, _ := json.MarshalIndent(op, "", "  ")
+			fmt.Println(string(out))
+		} else {
+			fmt.Print(docs.FormatOperator(key, op))
+		}
+		return nil
+	}
+}
+
+func runShaders(args []string, jsonOutput bool, port int, project string, timeout time.Duration) error {
+	if len(args) == 0 {
+		return commands.ShadersList("", jsonOutput)
+	}
+
+	sub := args[0]
+	args = args[1:]
+
+	switch sub {
+	case "list":
+		category := ""
+		for i := 0; i < len(args); i++ {
+			if args[i] == "--cat" && i+1 < len(args) {
+				category = args[i+1]
+				i++
+			}
+		}
+		return commands.ShadersList(category, jsonOutput)
+
+	case "get":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli shaders get <name>")
+		}
+		return commands.ShadersGet(args[0], jsonOutput)
+
+	case "apply":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli shaders apply <name> <glsl_top_path>")
+		}
+		c, err := getClient(port, project, timeout)
+		if err != nil {
+			return err
+		}
+		return commands.ShadersApply(c, args[0], args[1], jsonOutput)
+
+	default:
+		return fmt.Errorf("unknown shaders subcommand: %s (use list, get, apply)", sub)
+	}
+}
+
+func runDiff(args []string, jsonOutput bool, port int, project string, timeout time.Duration) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli diff <file1> <file2> | td-cli diff --live <snapshot> [path]")
+	}
+
+	live := false
+	path := "/"
+	var fileArgs []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--live" {
+			live = true
+		} else if args[i] == "--path" && i+1 < len(args) {
+			path = args[i+1]
+			i++
+		} else {
+			fileArgs = append(fileArgs, args[i])
+		}
+	}
+
+	if live {
+		if len(fileArgs) < 1 {
+			return fmt.Errorf("usage: td-cli diff --live <snapshot.json> [path]")
+		}
+		if len(fileArgs) > 1 {
+			path = fileArgs[1]
+		}
+		c, err := getClient(port, project, timeout)
+		if err != nil {
+			return err
+		}
+		return commands.DiffLive(c, fileArgs[0], path, jsonOutput)
+	}
+
+	if len(fileArgs) < 2 {
+		return fmt.Errorf("usage: td-cli diff <file1> <file2>")
+	}
+	return commands.DiffFiles(fileArgs[0], fileArgs[1], jsonOutput)
+}
+
+func runChop(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli chop <info|channels|sample> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli chop info <path>")
+		}
+		return commands.ChopInfo(c, args[0], jsonOutput)
+	case "channels":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli chop channels <path> [--start N] [--count N]")
+		}
+		start, count := 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.ChopChannels(c, args[0], start, count, jsonOutput)
+	case "sample":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli chop sample <path> [--channel <name>] [--index N]")
+		}
+		channel := ""
+		index := 0
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--channel" && i+1 < len(args) {
+				channel = args[i+1]
+				i++
+			} else if args[i] == "--index" && i+1 < len(args) {
+				index, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.ChopSample(c, args[0], channel, index, jsonOutput)
+	default:
+		return fmt.Errorf("unknown chop subcommand: %s (use info, channels, sample)", sub)
+	}
+}
+
+func runSop(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli sop <info|points|attribs> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli sop info <path>")
+		}
+		return commands.SopInfo(c, args[0], jsonOutput)
+	case "points":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli sop points <path> [--start N] [--limit N]")
+		}
+		start, limit := 0, 100
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--limit" && i+1 < len(args) {
+				limit, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.SopPoints(c, args[0], start, limit, jsonOutput)
+	case "attribs":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli sop attribs <path>")
+		}
+		return commands.SopAttribs(c, args[0], jsonOutput)
+	default:
+		return fmt.Errorf("unknown sop subcommand: %s (use info, points, attribs)", sub)
+	}
+}
+
+func runPop(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli pop <info|points|prims|verts|bounds|attributes|save|av> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop info <path>")
+		}
+		return commands.PopInfo(c, args[0], jsonOutput)
+	case "points":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop points <path> [--attr P] [--start 0] [--count 100]")
+		}
+		attr, start, count := "P", 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--attr" && i+1 < len(args) {
+				attr = args[i+1]
+				i++
+			} else if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.PopPoints(c, args[0], attr, start, count, jsonOutput)
+	case "prims":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop prims <path> [--attr N] [--start 0] [--count 100]")
+		}
+		attr, start, count := "N", 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--attr" && i+1 < len(args) {
+				attr = args[i+1]
+				i++
+			} else if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.PopPrims(c, args[0], attr, start, count, jsonOutput)
+	case "verts":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop verts <path> [--attr uv] [--start 0] [--count 100]")
+		}
+		attr, start, count := "uv", 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--attr" && i+1 < len(args) {
+				attr = args[i+1]
+				i++
+			} else if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--count" && i+1 < len(args) {
+				count, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.PopVerts(c, args[0], attr, start, count, jsonOutput)
+	case "bounds":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop bounds <path>")
+		}
+		return commands.PopBounds(c, args[0], jsonOutput)
+	case "attributes":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop attributes <path>")
+		}
+		return commands.PopAttributes(c, args[0], jsonOutput)
+	case "save":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli pop save <path> [-o file]")
+		}
+		fp := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "-o" && i+1 < len(args) {
+				fp = args[i+1]
+				i++
+			}
+		}
+		return commands.PopSave(c, args[0], fp, jsonOutput)
+	case "av":
+		root := "/project1"
+		name := "pop_audio_visual"
+		template := "audio-reactive"
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--root":
+				if i+1 < len(args) {
+					root = args[i+1]
+					i++
+				}
+			case "--name":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			default:
+				if !strings.HasPrefix(args[i], "--") {
+					template = args[i]
+				}
+			}
+		}
+		return commands.PopAV(c, template, root, name, jsonOutput)
+	default:
+		return fmt.Errorf("unknown pop subcommand: %s (use info, points, prims, verts, bounds, attributes, save, av)", sub)
+	}
+}
+
+func runTable(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli table <rows|cell|append|delete> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "rows":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table rows <path> [--start N] [--end N]")
+		}
+		start, end := 0, -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--start" && i+1 < len(args) {
+				start, _ = strconv.Atoi(args[i+1])
+				i++
+			} else if args[i] == "--end" && i+1 < len(args) {
+				end, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.TableRows(c, args[0], start, end, jsonOutput)
+	case "cell":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table cell <path> <row> <col> [--value V]")
+		}
+		row, col, value := commands.ParseTableCoords(args[1:])
+		return commands.TableCell(c, args[0], row, col, value, jsonOutput)
+	case "append":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table append <path> [--row|--col] [--values v1,v2]")
+		}
+		mode := "row"
+		var values []string
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--col" {
+				mode = "col"
+			} else if args[i] == "--row" {
+				mode = "row"
+			} else if args[i] == "--values" && i+1 < len(args) {
+				values = strings.Split(args[i+1], ",")
+				i++
+			}
+		}
+		return commands.TableAppend(c, args[0], mode, values, jsonOutput)
+	case "delete":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli table delete <path> [--row|--col] [--index N]")
+		}
+		mode := "row"
+		index := -1
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--col" {
+				mode = "col"
+			} else if args[i] == "--row" {
+				mode = "row"
+			} else if args[i] == "--index" && i+1 < len(args) {
+				index, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		}
+		return commands.TableDelete(c, args[0], mode, index, jsonOutput)
+	default:
+		return fmt.Errorf("unknown table subcommand: %s (use rows, cell, append, delete)", sub)
+	}
+}
+
+func runTimeline(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return commands.TimelineInfo(c, jsonOutput)
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		return commands.TimelineInfo(c, jsonOutput)
+	case "play":
+		return commands.TimelinePlay(c, jsonOutput)
+	case "pause":
+		return commands.TimelinePause(c, jsonOutput)
+	case "seek":
+		timeVal := -1.0
+		for i := 0; i < len(args); i++ {
+			timeVal, _ = strconv.ParseFloat(args[i], 64)
+		}
+		if timeVal < 0 {
+			return fmt.Errorf("usage: td-cli timeline seek <time>")
+		}
+		return commands.TimelineSeek(c, timeVal, jsonOutput)
+	case "range":
+		start, end := -1.0, -1.0
+		for i := 0; i+1 < len(args); i += 2 {
+			switch args[i] {
+			case "--start":
+				start, _ = strconv.ParseFloat(args[i+1], 64)
+			case "--end":
+				end, _ = strconv.ParseFloat(args[i+1], 64)
+			}
+		}
+		return commands.TimelineRange(c, start, end, jsonOutput)
+	case "rate":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli timeline rate <fps>")
+		}
+		rate, _ := strconv.ParseFloat(args[0], 64)
+		return commands.TimelineRate(c, rate, jsonOutput)
+	default:
+		return fmt.Errorf("unknown timeline subcommand: %s (use info, play, pause, seek, range, rate)", sub)
+	}
+}
+
+func runCook(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli cook <node|network> <path>")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "node":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli cook node <path>")
+		}
+		return commands.CookNode(c, args[0], jsonOutput)
+	case "network":
+		path := "/"
+		if len(args) > 0 {
+			path = args[0]
+		}
+		return commands.CookNetwork(c, path, jsonOutput)
+	default:
+		return fmt.Errorf("unknown cook subcommand: %s (use node, network)", sub)
+	}
+}
+
+func runUi(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli ui <navigate|select|pulse> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "navigate":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli ui navigate <path>")
+		}
+		return commands.UiNavigate(c, args[0], jsonOutput)
+	case "select":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli ui select <path>")
+		}
+		return commands.UiSelect(c, args[0], jsonOutput)
+	case "pulse":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli ui pulse <path> <param>")
+		}
+		return commands.UiPulse(c, args[0], args[1], jsonOutput)
+	default:
+		return fmt.Errorf("unknown ui subcommand: %s (use navigate, select, pulse)", sub)
+	}
+}
+
+func runBatch(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli batch <exec|parset> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "exec":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli batch exec <json_file>")
+		}
+		data, err := os.ReadFile(args[0])
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+		var cmds []map[string]interface{}
+		if err := json.Unmarshal(data, &cmds); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		return commands.BatchExec(c, cmds, jsonOutput)
+	case "parset":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli batch parset <json_file>")
+		}
+		data, err := os.ReadFile(args[0])
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+		var sets []map[string]interface{}
+		if err := json.Unmarshal(data, &sets); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		return commands.BatchParSet(c, sets, jsonOutput)
+	default:
+		return fmt.Errorf("unknown batch subcommand: %s (use exec, parset)", sub)
+	}
+}
+
+func runMedia(c *client.Client, args []string, jsonOutput bool) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: td-cli media <info|export|record|snapshot> [args]")
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "info":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli media info <path>")
+		}
+		return commands.MediaInfo(c, args[0], jsonOutput)
+	case "export":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: td-cli media export <path> <output_file>")
+		}
+		return commands.MediaExport(c, args[0], args[1], jsonOutput)
+	case "record":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli media record <path> [--start S] [--end E]")
+		}
+		start, end := 0.0, 0.0
+		for i := 1; i+1 < len(args); i += 2 {
+			switch args[i] {
+			case "--start":
+				start, _ = strconv.ParseFloat(args[i+1], 64)
+			case "--end":
+				end, _ = strconv.ParseFloat(args[i+1], 64)
+			}
+		}
+		return commands.MediaRecord(c, args[0], start, end, jsonOutput)
+	case "snapshot":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: td-cli media snapshot <path> [-o f]")
+		}
+		outputFile := ""
+		for i := 1; i < len(args); i++ {
+			if args[i] == "-o" && i+1 < len(args) {
+				outputFile = args[i+1]
+				i++
+			}
+		}
+		return commands.MediaSnapshot(c, args[0], outputFile, jsonOutput)
+	default:
+		return fmt.Errorf("unknown media subcommand: %s (use info, export, record, snapshot)", sub)
+	}
+}
+
+func parseExecArgs(args []string) (code, filePath, verifyPath, screenshotPath string) {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-f" && i+1 < len(args) {
+			filePath = args[i+1]
+			i++
+		} else if args[i] == "--verify" && i+1 < len(args) {
+			verifyPath = args[i+1]
+			i++
+		} else if args[i] == "--screenshot" && i+1 < len(args) {
+			screenshotPath = args[i+1]
+			i++
+		} else {
+			if code != "" {
+				code += " "
+			}
+			code += args[i]
+		}
+	}
+	return
+}

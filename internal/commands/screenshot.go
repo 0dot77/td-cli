@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/td-cli/td-cli/internal/client"
+	"github.com/0dot77/td-cli/internal/client"
 )
 
 type screenshotResult struct {
@@ -39,7 +39,9 @@ func Screenshot(c *client.Client, path, outputFile string, jsonOutput bool) erro
 
 	var result screenshotResult
 	if resp.Data != nil {
-		json.Unmarshal(resp.Data, &result)
+		if err := json.Unmarshal(resp.Data, &result); err != nil {
+			return fmt.Errorf("failed to parse response data: %w", err)
+		}
 	}
 
 	if outputFile != "" {
