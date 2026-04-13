@@ -117,7 +117,14 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		if err := commands.Context(c, jsonOutput); err != nil {
+		depth := 2
+		for i := 0; i < len(cmdArgs); i++ {
+			if cmdArgs[i] == "--depth" && i+1 < len(cmdArgs) {
+				depth, _ = strconv.Atoi(cmdArgs[i+1])
+				i++
+			}
+		}
+		if err := commands.Context(c, depth, jsonOutput); err != nil {
 			fatal(err)
 		}
 
@@ -162,8 +169,8 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 		return commands.Status(c, jsonOutput)
 
 	case "exec":
-		code, filePath := parseExecArgs(args)
-		return commands.Exec(c, code, filePath, jsonOutput)
+		code, filePath, verifyPath, screenshotPath := parseExecArgs(args)
+		return commands.Exec(c, code, filePath, jsonOutput, verifyPath, screenshotPath)
 
 	case "ops":
 		return runOps(c, args, jsonOutput)
@@ -930,10 +937,16 @@ func runDocs(args []string, jsonOutput bool) error {
 	}
 }
 
-func parseExecArgs(args []string) (code, filePath string) {
+func parseExecArgs(args []string) (code, filePath, verifyPath, screenshotPath string) {
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-f" && i+1 < len(args) {
 			filePath = args[i+1]
+			i++
+		} else if args[i] == "--verify" && i+1 < len(args) {
+			verifyPath = args[i+1]
+			i++
+		} else if args[i] == "--screenshot" && i+1 < len(args) {
+			screenshotPath = args[i+1]
 			i++
 		} else {
 			if code != "" {
@@ -956,6 +969,8 @@ Commands:
   instances                      List running TD instances
   exec <code>                    Execute Python in TD
   exec -f <file>                 Execute Python file
+  exec ... --verify <path>       Verify node graph after exec
+  exec ... --screenshot <path>   Screenshot TOP after exec
   ops list [path]                List operators
   ops create <type> <parent>     Create operator
   ops delete <path>              Delete operator
