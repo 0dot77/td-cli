@@ -97,7 +97,11 @@ func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verif
 			fmt.Fprintf(os.Stderr, "Screenshot warning: failed to write file: %s\n", err)
 			return nil
 		}
-		fmt.Printf("Screenshot saved to .tmp/preview.png\n")
+		if ssResult.Width > 0 && ssResult.Height > 0 {
+			fmt.Printf("Screenshot saved to .tmp/preview.png (%dx%d)\n", ssResult.Width, ssResult.Height)
+		} else {
+			fmt.Printf("Screenshot saved to .tmp/preview.png\n")
+		}
 	}
 
 	// Verify node graph at the target path after successful execution.
@@ -113,13 +117,43 @@ func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verif
 		} else if verifyResp.Data != nil {
 			var verifyData struct {
 				Graph struct {
-					NodeCount int `json:"nodeCount"`
-					EdgeCount int `json:"edgeCount"`
+					NodeCount       int `json:"nodeCount"`
+					ConnectionCount int `json:"connectionCount"`
 				} `json:"graph"`
+				Issues struct {
+					IssueCount     int `json:"issueCount"`
+					TargetErrors   []string `json:"targetErrors"`
+					TargetWarnings []string `json:"targetWarnings"`
+					Nodes          []struct {
+						Path     string   `json:"path"`
+						Errors   []string `json:"errors"`
+						Warnings []string `json:"warnings"`
+					} `json:"nodes"`
+				} `json:"issues"`
 			}
 			if jsonErr := json.Unmarshal(verifyResp.Data, &verifyData); jsonErr == nil {
-				fmt.Printf("Verify: %s — %d nodes, %d edges ✓\n",
-					verifyPath, verifyData.Graph.NodeCount, verifyData.Graph.EdgeCount)
+				ic := verifyData.Issues.IssueCount
+				if ic > 0 {
+					fmt.Printf("Verify: %s — %d nodes, %d connections, %d issues ⚠\n",
+						verifyPath, verifyData.Graph.NodeCount, verifyData.Graph.ConnectionCount, ic)
+					for _, e := range verifyData.Issues.TargetErrors {
+						fmt.Printf("  ✗ %s\n", e)
+					}
+					for _, w := range verifyData.Issues.TargetWarnings {
+						fmt.Printf("  ⚠ %s\n", w)
+					}
+					for _, n := range verifyData.Issues.Nodes {
+						for _, e := range n.Errors {
+							fmt.Printf("  ✗ %s: %s\n", n.Path, e)
+						}
+						for _, w := range n.Warnings {
+							fmt.Printf("  ⚠ %s: %s\n", n.Path, w)
+						}
+					}
+				} else {
+					fmt.Printf("Verify: %s — %d nodes, %d connections ✓\n",
+						verifyPath, verifyData.Graph.NodeCount, verifyData.Graph.ConnectionCount)
+				}
 			}
 		}
 	}

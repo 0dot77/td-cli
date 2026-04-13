@@ -331,6 +331,103 @@ comp.inputConnectors[1].connect(fade.outputConnectors[0])   # faded prev frame
 ```
 Pattern: `glsl → fb(wire+par.top) → fade → comp[1]`, `glsl → comp[0]` — zero errors, zero warnings.
 
+### geometryCOMP — pathsop Causes Cook Loop (CRITICAL)
+- DO NOT set `geo.par.pathsop` — causes cook dependency self-loop: `geo_main → geo_main`
+- Instead, rely on **display/render flags** on the output SOP inside the geo
+- Programmatically created SOPs have `display=False, render=False` by default — you MUST set them:
+```python
+geo = p.create(td.geometryCOMP, 'geo')
+for child in list(geo.findChildren(depth=1)):
+    child.destroy()
+grid = geo.create(td.gridSOP, 'grid')
+noise = geo.create(td.noiseSOP, 'noise')
+noise.inputConnectors[0].connect(grid.outputConnectors[0])
+null_out = geo.create(td.nullSOP, 'out')
+null_out.inputConnectors[0].connect(noise.outputConnectors[0])
+# CRITICAL — without this, render shows nothing:
+null_out.display = True
+null_out.render = True
+# DO NOT: geo.par.pathsop = 'out'  ← cook loop!
+```
+
+### Expression Paths — Always Use Absolute Paths (CRITICAL)
+- Expressions on parameters resolve relative to the **operator that owns the parameter**
+- `op('math_bass')` inside a child SOP of `geo_main` resolves to `/project1/geo_main/math_bass` (WRONG)
+- Always use absolute paths in expressions, especially for SOPs inside geometryCOMP:
+```python
+# WRONG — resolves relative to geo_main
+noise.par.amp.expr = "op('math_bass')['chan1'] * 2.0"
+
+# CORRECT — absolute path
+noise.par.amp.expr = "op('/project1/math_bass')['chan1'] * 2.0"
+```
+- For top-level operators referencing each other, relative paths work fine
+- For operators INSIDE a COMP referencing OUTSIDE operators, MUST use absolute paths
+
+### Node Naming — Collision Suffix (IMPORTANT)
+- When TD creates a node with a name that already exists (even if previously deleted), it appends a numeric suffix: `sl_bass` → `sl_bass1`
+- After bulk `destroy()` + `create()`, names may not match expectations
+- Always verify node names after creation, or use `op.name` attribute to get actual name
+- Use absolute paths (`op.path`) in expressions, not assumed names
+
+### UI Panel Building (TD 099)
+
+#### Recommended: `parameterCOMP` (simplest, most reliable)
+Auto-generates an interactive panel from any operator's custom parameters:
+```python
+ctrl = p.create(td.baseCOMP, 'ctrl')
+# ... add custom parameter pages with appendCustomPage / appendFloat ...
+
+ui = p.create(td.parameterCOMP, 'ui')
+ui.par.op = ctrl.path        # point at ctrl
+ui.par.builtin = False        # hide built-in pars
+ui.par.custom = True          # show custom pars only
+ui.par.pagenames = True       # show Audio/Visual/Post tabs
+ui.par.labels = True
+ui.par.compress = 0.85        # compact layout
+
+# Open as interactive window (no A-key needed)
+win = p.create(td.windowCOMP, 'ui_window')
+win.par.winop = ui.path
+win.par.winw = 350
+win.par.winh = 550
+win.par.borders = True
+win.par.winopen = True
+```
+- Edits ctrl parameters **directly** — no expression wiring needed
+- Page tabs, labels, sliders all auto-generated
+- Best for: quick control panels, prototyping, parameter tuning
+
+#### Custom: `containerCOMP` + `sliderCOMP` children
+For fully custom-styled UI panels:
+```python
+ui = p.create(td.containerCOMP, 'ui')
+ui.par.align = 'column'       # auto vertical stacking
+ui.par.spacing = 4             # gap between children
+ui.par.marginl = 10
+ui.par.marginr = 10
+
+sl = ui.create(td.sliderCOMP, 'sl_gain')
+sl.par.label = 'Gain'
+sl.par.valuerange0l = 0.0
+sl.par.valuerange0h = 30.0
+sl.par.value0 = 5.0
+sl.par.hmode = 'fill'          # auto-fill parent width
+sl.par.h = 40
+```
+- Use `hmode='fill'` on children for responsive width
+- `align='column'` eliminates manual x/y positioning
+- `windowCOMP` for guaranteed interaction; container viewer needs `A` key
+- Nested containerCOMPs intercept mouse events — keep structure flat
+
+#### Available widget types:
+- `sliderCOMP` — slider with `value0`, `valuerange0l/h`, `label`, `colorr/g/b`
+- `buttonCOMP` — toggle/momentary button
+- `fieldCOMP` — text input field
+- `listCOMP` — scrollable list
+- `parameterCOMP` — auto-generated parameter panel
+- `widgetCOMP` — generic widget container
+
 ### Creating Networks — Checklist
 1. Always `import td` and use `td.lowercaseTypeCHOP` (not uppercase globals)
 2. Always set positions with `pos(op, x, y)` immediately after creation
@@ -342,3 +439,7 @@ Pattern: `glsl → fb(wire+par.top) → fade → comp[1]`, `glsl → comp[0]` �
 8. For 3D rotation: rotate at geometryCOMP level, NOT at POP/SOP level (avoids mesh leaving camera view)
 9. For noisePOP time animation: use `par.t4d` (NOT `par.tx/ty/tz` which moves spatially)
 10. Verify parameter names exist before setting — TD 099 has many gotchas (see table above)
+11. Set `display=True, render=True` on output SOP inside geometryCOMP (defaults are False)
+12. DO NOT set `geo.par.pathsop` — causes cook dependency self-loop
+13. Use absolute paths in expressions for operators inside COMPs referencing outside operators
+14. After bulk create, verify actual node names (TD may add numeric suffix)
