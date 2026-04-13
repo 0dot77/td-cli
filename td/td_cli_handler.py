@@ -1856,10 +1856,10 @@ def handle_disconnect(body):
         return _error(f"Destination not found: {dst_path}")
 
     # Find and disconnect the connection
-    for conn in src_op.outputConnectors:
-        for c in conn.connections:
-            if c.owner == dst_op:
-                conn.disconnect(c)
+    for i, inp in enumerate(dst_op.inputConnectors):
+        for c in inp.connections:
+            if c.owner == src_op:
+                inp.disconnect()
                 return _success(f"Disconnected {src_op.name} -> {dst_op.name}")
 
     return _error(f"No connection found between {src_path} and {dst_path}")
@@ -2110,6 +2110,8 @@ def _collect_network_nodes(
     if remaining_depth == 0:
         return nodes
 
+    if not hasattr(parent, 'findChildren'):
+        return nodes
     for child in parent.findChildren(depth=1):
         nodes.append(_serialize_op(child, include_defaults))
         if child.isCOMP and child.name != "TDCliServer":
@@ -3446,35 +3448,29 @@ def handle_table_delete(body):
 
 
 def handle_timeline_info(body):
-    root = root()
     tl = root.time
     return _success(
         "Timeline info",
         {
-            "currentTime": tl.frame / tl.rate,
-            "start": tl.startFrame / tl.rate,
-            "end": tl.endFrame / tl.rate,
+            "currentTime": tl.frame / tl.rate if tl.rate > 0 else 0,
+            "start": tl.start,
+            "end": tl.end,
+            "rangeStart": tl.rangeStart,
+            "rangeEnd": tl.rangeEnd,
             "rate": tl.rate,
             "isPlaying": tl.play,
-            "playMode": str(tl.playMode),
-            "cuePoint": tl.cueFrame / tl.rate if tl.rate > 0 else 0,
-            "isCueEnabled": tl.cueEnable,
-            "signaled": tl.signaled,
+            "isLooping": tl.loop,
             "currentFrame": tl.frame,
-            "startFrame": tl.startFrame,
-            "endFrame": tl.endFrame,
         },
     )
 
 
 def handle_timeline_play(body):
-    root = root()
     root.time.play = True
     return _success("Timeline playing")
 
 
 def handle_timeline_pause(body):
-    root = root()
     root.time.play = False
     return _success("Timeline paused")
 
@@ -3482,27 +3478,27 @@ def handle_timeline_pause(body):
 def handle_timeline_seek(body):
     t = body.get("time")
     frame = body.get("frame")
-    root = root()
+    tl = root.time
     if frame is not None:
-        root.time.frame = int(frame)
+        tl.frame = int(frame)
     elif t is not None:
-        root.time.frame = int(float(t) * root.time.rate)
+        tl.frame = int(float(t) * tl.rate)
     else:
         return _error("time or frame required")
-    return _success("Seeked", {"frame": root.time.frame})
+    return _success("Seeked", {"frame": tl.frame})
 
 
 def handle_timeline_range(body):
     start = body.get("start")
     end = body.get("end")
-    root = root()
+    tl = root.time
     if start is not None:
-        root.time.startFrame = int(float(start) * root.time.rate)
+        tl.rangeStart = int(float(start) * tl.rate)
     if end is not None:
-        root.time.endFrame = int(float(end) * root.time.rate)
+        tl.rangeEnd = int(float(end) * tl.rate)
     return _success(
         "Range set",
-        {"startFrame": root.time.startFrame, "endFrame": root.time.endFrame},
+        {"rangeStart": tl.rangeStart, "rangeEnd": tl.rangeEnd},
     )
 
 
@@ -3510,7 +3506,6 @@ def handle_timeline_rate(body):
     rate = body.get("rate")
     if rate is None:
         return _error("rate required")
-    root = root()
     root.time.rate = float(rate)
     return _success("Rate set", {"rate": root.time.rate})
 

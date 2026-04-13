@@ -55,6 +55,20 @@ func init() {
 	json.Unmarshal(pythonAPIJSON, &apiClasses)
 }
 
+// normalizeTDName converts camelCase TD names like "noiseTOP" to underscore keys like "noise_top".
+func normalizeTDName(name string) string {
+	// Find where the suffix starts (TOP, CHOP, SOP, DAT, COMP, MAT, POP)
+	suffixes := []string{"TOP", "CHOP", "SOP", "DAT", "COMP", "MAT", "POP"}
+	lower := strings.ToLower(name)
+	for _, suf := range suffixes {
+		if strings.HasSuffix(name, suf) {
+			prefix := lower[:len(lower)-len(suf)]
+			return prefix + "_" + strings.ToLower(suf)
+		}
+	}
+	return lower
+}
+
 // LookupOperator finds an operator by name (case-insensitive, partial match).
 func LookupOperator(query string) (string, *Operator) {
 	q := strings.ToLower(query)
@@ -62,6 +76,14 @@ func LookupOperator(query string) (string, *Operator) {
 	// Exact match first
 	if op, ok := operators[q]; ok {
 		return q, &op
+	}
+
+	// Try normalized form (e.g. "noiseTOP" -> "noise_top")
+	normalized := normalizeTDName(query)
+	if normalized != q {
+		if op, ok := operators[normalized]; ok {
+			return normalized, &op
+		}
 	}
 
 	// Try with common suffixes
