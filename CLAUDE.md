@@ -239,19 +239,24 @@ Audio CHOPs (x: -1800 to -900)  |  POP chain (x: -400 to 500)  |  Render (x: 800
   sel_high (-1500, 300)         |  pop_out (500, 500)           |  render (1400,450) |  out1 (2600, 450)
 ```
 
-### feedbackTOP — Cook Loop Prevention (CRITICAL)
-NEVER wire feedbackTOP in a circular loop. Use `par.top` instead:
+### feedbackTOP — Correct Wiring Pattern (CRITICAL)
+feedbackTOP requires BOTH `par.top` AND wire input. It must be created fresh (not rewired from old state).
+The cook loop WARNING is expected and normal — feedbackTOP introduces a 1-frame delay internally.
 ```python
-# WRONG — causes cook dependency loop:
-#   glsl → comp[0], feedback → comp[1], comp → level → feedback (LOOP!)
+# Create fresh feedback nodes
+fb = container.create(_T('feedbackTOP'), 'fb')
+fb_fade = container.create(_T('levelTOP'), 'fb_fade')
+fb_fade.par.opacity = 0.92
 
-# CORRECT — feedback reads previous frame via par.top:
-feedback.par.top = comp_blend       # reference, not wire
-level_fade.inputConnectors[0].connect(feedback.outputConnectors[0])
-comp.inputConnectors[0].connect(glsl.outputConnectors[0])
-comp.inputConnectors[1].connect(level_fade.outputConnectors[0])
+# Wiring order matters — connect in this sequence:
+comp.inputConnectors[0].connect(glsl.outputConnectors[0])   # fresh input
+fb.par.top = comp                                             # prev frame target
+fb.inputConnectors[0].connect(comp.outputConnectors[0])       # wire input (required!)
+fb_fade.inputConnectors[0].connect(fb.outputConnectors[0])    # fade trail
+comp.inputConnectors[1].connect(fb_fade.outputConnectors[0])  # feed back into comp
 ```
-Pattern: `feedback.par.top = source` → `feedback → fade → comp[1]`, `input → comp[0]`
+Pattern: `glsl → comp[0]`, `comp → fb(wire+par.top) → fade → comp[1]`
+WARNING "Cook dependency loop detected" is EXPECTED — do NOT try to eliminate it.
 
 ### Creating Networks — Checklist
 1. Always `import td` and use `td.lowercaseTypeCHOP` (not uppercase globals)
