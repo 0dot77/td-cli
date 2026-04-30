@@ -110,7 +110,8 @@ func main() {
 		}
 
 	case "doctor":
-		if err := commands.Doctor(version, port, project, jsonOutput); err != nil {
+		live := len(cmdArgs) > 0 && cmdArgs[0] == "live"
+		if err := commands.Doctor(version, port, project, live, jsonOutput); err != nil {
 			fatal(err)
 		}
 
@@ -192,7 +193,9 @@ Commands:
   exec <code>                    Execute Python in TD
   exec -f <file>                 Execute Python file
   exec ... --verify <path>       Verify node graph after exec
+  exec ... --verify-strict       Fail if verify reports graph issues
   exec ... --screenshot <path>   Screenshot TOP after exec
+  exec ... --screenshot <path> -o file.png
   ops list [path]                List operators
   ops create <type> <parent>     Create operator
   ops delete <path>              Delete operator
@@ -250,6 +253,7 @@ Commands:
   docs api [class]               Python API reference
   init                           Generate CLAUDE.md + AGENTS.md
   doctor                         Diagnose setup and connection issues
+  doctor live                    Also exercise live exec/screenshot/ui/observe routes
   update                         Self-update from GitHub Releases
   version                        Show version
 

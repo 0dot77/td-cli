@@ -98,6 +98,8 @@ class FakeOp:
         self.par = FakeParCollection(self._params)
         self.children = []
         self._parent = None
+        self.selected = False
+        self.currentViewer = None
 
     def pars(self):
         return self._params
@@ -153,6 +155,16 @@ class FakeOp:
     def destroy(self):
         if self._parent is not None:
             self._parent.children = [child for child in self._parent.children if child is not self]
+
+
+class FakePane:
+    def __init__(self):
+        self.owner = None
+
+
+class FakeUI:
+    def __init__(self):
+        self.panes = [FakePane()]
 
 
 class FakeImportParent(FakeOp):
@@ -530,6 +542,33 @@ class TDCliHandlerTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(glsl.par.pixeldat.val, "../shader_pixel")
+
+    def test_handle_ui_navigate_sets_first_pane_owner(self):
+        root = FakeOp("/project1", "project1", op_type="containerCOMP", family="COMP", is_comp=True)
+        target = FakeOp("/project1/scene", "scene", op_type="containerCOMP", family="COMP", is_comp=True)
+        target._parent = root
+        root.children.append(target)
+        self.module.op = {root.path: root, target.path: target}.get
+        self.module.ui = FakeUI()
+
+        result = self.module.handle_ui_navigate({"path": target.path})
+
+        self.assertTrue(result["success"])
+        self.assertIs(self.module.ui.panes[0].owner, target)
+
+    def test_handle_ui_select_selects_target_and_navigates_to_parent(self):
+        root = FakeOp("/project1", "project1", op_type="containerCOMP", family="COMP", is_comp=True)
+        target = FakeOp("/project1/out1", "out1", op_type="nullTOP", family="TOP")
+        target._parent = root
+        root.children.append(target)
+        self.module.op = {root.path: root, target.path: target}.get
+        self.module.ui = FakeUI()
+
+        result = self.module.handle_ui_select({"path": target.path})
+
+        self.assertTrue(result["success"])
+        self.assertTrue(target.selected)
+        self.assertIs(self.module.ui.panes[0].owner, root)
 
     def _read_backup_payload(self, backup_path):
         with open(backup_path, "r", encoding="utf-8") as handle:
