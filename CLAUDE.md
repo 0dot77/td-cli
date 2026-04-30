@@ -11,8 +11,8 @@
 ```bash
 td-cli status                              # 1. Check connection
 td-cli context --depth 2                   # 2. Get full project summary (tree, families, harness history)
-td-cli exec -f scene.py --verify /project1 --screenshot /project1/render1
-                                           # 3. Execute + verify + capture preview to .tmp/preview.png
+td-cli exec -f scene.py --verify /project1 --verify-strict --screenshot /project1/render1 -o preview.png
+                                           # 3. Execute + verify strictly + capture preview
 td-cli harness observe /project1 --depth 2 # 4. Deep inspect (graph, data flow, issues)
 td-cli harness verify /project1 --assert '[{"kind":"parameterValue","path":"/project1/noise1","name":"roughness","min":0.1}]'
                                            # 5. Assert expected state
@@ -63,7 +63,8 @@ td-cli harness rollback <id>               # 6. Undo if needed
 | `td-cli exec "<code>"` | Execute Python in TD |
 | `td-cli exec -f <file>` | Execute from file |
 | `td-cli exec ... --verify <path>` | + verify node graph after exec |
-| `td-cli exec ... --screenshot <path>` | + capture TOP to `.tmp/preview.png` |
+| `td-cli exec ... --verify-strict` | + fail command if verify reports graph issues |
+| `td-cli exec ... --screenshot <path> -o file.png` | + capture TOP to a chosen output path |
 
 ### Data Access
 | Command | Description |
@@ -234,6 +235,9 @@ noise.par['gain'].expr = "op('math_bass')['chan1'] * 0.8 + 0.15"  # NOT * 10!
 - `poptoSOP`: `pop` (reference to source POP, NOT wire connection)
 - `geometryCOMP`: `pathsop` (not `sop`), `lookat` on cameraCOMP
 - `glslmultiTOP`: `pixeldat`, `vec0name`, `vec0valuex/y/z/w` for uniforms
+
+### Python Expression Gotchas
+TouchDesigner parameter expressions are Python expressions, but their scope is not the same as a full script. Do not assume bare helpers such as `sin`, `cos`, or `floor` exist. Prefer expressions created by scripts with explicit names, for example `math.sin(absTime.seconds)` after importing `math` where appropriate, or use TD-native objects such as `absTime.seconds` and `op('ctrl')[0].eval()` carefully. In agent workflows, use `td-cli exec ... --verify <path> --verify-strict` so expression errors fail fast instead of hiding in operator warnings.
 
 ### Audio Signal Calibration (CRITICAL)
 Raw audio from `audiodeviceinCHOP` is typically -60 to -20 dB (peak ~0.01–0.05).

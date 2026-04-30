@@ -22,7 +22,7 @@ type doctorCheck struct {
 
 // Doctor runs diagnostic checks and reports setup health.
 // portOverride and projectPath correspond to --port and --project global flags.
-func Doctor(version string, portOverride int, projectPath string, jsonOutput bool) error {
+func Doctor(version string, portOverride int, projectPath string, live bool, jsonOutput bool) error {
 	var checks []doctorCheck
 
 	// 1. System info
@@ -204,6 +204,9 @@ func Doctor(version string, portOverride int, projectPath string, jsonOutput boo
 				p, health.Project, health.TDVersion, health.TDBuild,
 				health.ConnectorName, health.ConnectorVersion),
 		})
+		if live {
+			checks = append(checks, doctorLiveChecks(c)...)
+		}
 	}
 
 	// 7. Protocol version compatibility
@@ -281,4 +284,65 @@ func Doctor(version string, portOverride int, projectPath string, jsonOutput boo
 	}
 
 	return nil
+}
+
+func doctorLiveChecks(c *client.Client) []doctorCheck {
+	checks := []doctorCheck{}
+	const previewPath = "/project1/__td_cli_doctor_preview"
+	setupCode := `
+root = op('/project1')
+if root is None:
+    raise Exception('/project1 not found')
+tmp = root.op('__td_cli_doctor_preview')
+if tmp is None:
+    tmp = root.create(constantTOP, '__td_cli_doctor_preview')
+tmp.par.outputresolution = 'custom'
+tmp.par.resolutionw = 16
+tmp.par.resolutionh = 16
+tmp.par.resmult = False
+tmp.par.colorr = 0.1
+tmp.par.colorg = 0.8
+tmp.par.colorb = 1
+print(tmp.path)
+`
+	cleanupCode := `
+tmp = op('/project1/__td_cli_doctor_preview')
+if tmp is not None:
+    tmp.destroy()
+`
+
+	if resp, err := c.Call("/exec", map[string]string{"code": setupCode}); err != nil {
+		checks = append(checks, doctorCheck{Name: "live_exec", Status: "fail", Message: fmt.Sprintf("exec route failed: %s", err)})
+	} else if !resp.Success {
+		checks = append(checks, doctorCheck{Name: "live_exec", Status: "fail", Message: fmt.Sprintf("exec route returned error: %s", resp.Message)})
+	} else {
+		checks = append(checks, doctorCheck{Name: "live_exec", Status: "ok", Message: "exec route can create a temporary preview TOP"})
+	}
+
+	if resp, err := c.Call("/screenshot", map[string]string{"path": previewPath}); err != nil {
+		checks = append(checks, doctorCheck{Name: "live_screenshot", Status: "fail", Message: fmt.Sprintf("screenshot route failed: %s", err)})
+	} else if !resp.Success {
+		checks = append(checks, doctorCheck{Name: "live_screenshot", Status: "fail", Message: fmt.Sprintf("screenshot route returned error: %s", resp.Message)})
+	} else {
+		checks = append(checks, doctorCheck{Name: "live_screenshot", Status: "ok", Message: "screenshot route can capture a TOP"})
+	}
+
+	if resp, err := c.Call("/ui/navigate", map[string]string{"path": "/project1"}); err != nil {
+		checks = append(checks, doctorCheck{Name: "live_ui", Status: "warn", Message: fmt.Sprintf("ui navigate failed: %s", err)})
+	} else if !resp.Success {
+		checks = append(checks, doctorCheck{Name: "live_ui", Status: "warn", Message: fmt.Sprintf("ui navigate returned error: %s", resp.Message)})
+	} else {
+		checks = append(checks, doctorCheck{Name: "live_ui", Status: "ok", Message: "ui navigate route works"})
+	}
+
+	if resp, err := c.Call("/harness/observe", map[string]interface{}{"path": "/project1", "depth": 1}); err != nil {
+		checks = append(checks, doctorCheck{Name: "live_observe", Status: "fail", Message: fmt.Sprintf("harness observe failed: %s", err)})
+	} else if !resp.Success {
+		checks = append(checks, doctorCheck{Name: "live_observe", Status: "fail", Message: fmt.Sprintf("harness observe returned error: %s", resp.Message)})
+	} else {
+		checks = append(checks, doctorCheck{Name: "live_observe", Status: "ok", Message: "harness observe route works"})
+	}
+
+	_, _ = c.Call("/exec", map[string]string{"code": cleanupCode})
+	return checks
 }

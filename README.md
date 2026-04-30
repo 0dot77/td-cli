@@ -248,6 +248,7 @@ td-cli par get /project1/myNoise
 td-cli par set /project1/myNoise period 4
 td-cli dat read /project1/text1
 td-cli exec "print(op('/project1').children)"
+td-cli exec -f scene.py --verify /project1/myScene --verify-strict --screenshot /project1/myScene/out -o preview.png
 ```
 
 ### Main Commands
@@ -258,6 +259,8 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli instances` | List running TD instances |
 | `td-cli exec "<code>"` | Execute Python in TD |
 | `td-cli exec -f script.py` | Execute a local Python file in TD |
+| `td-cli exec ... --verify <path> --verify-strict` | Execute and fail if verification finds graph issues |
+| `td-cli exec ... --screenshot <path> -o file.png` | Execute and save a TOP preview |
 | `td-cli ops list [path]` | List operators |
 | `td-cli ops create <type> <parent>` | Create an operator |
 | `td-cli ops delete <path>` | Delete an operator |
@@ -293,6 +296,7 @@ td-cli exec "print(op('/project1').children)"
 | `td-cli docs api [class]` | Read Python API docs |
 | `td-cli init` | Generate CLAUDE.md + AGENTS.md for agent integration |
 | `td-cli doctor` | Diagnose setup and connection issues |
+| `td-cli doctor live` | Also exercise live exec/screenshot/ui/observe routes |
 | `td-cli update` | Self-update from GitHub Releases |
 | `td-cli version` | Show version |
 
@@ -306,7 +310,7 @@ td-cli exec "print(op('/project1').children)"
 
 ### Troubleshooting
 
-Run `td-cli doctor` first — it checks the home directory, heartbeat files, port reachability, server health, and protocol version in one pass.
+Run `td-cli doctor` first — it checks the home directory, heartbeat files, port reachability, server health, and protocol version in one pass. If the basic setup passes but agent actions still behave strangely, run `td-cli doctor live`; it briefly creates a temporary preview TOP and checks live `exec`, `screenshot`, `ui/navigate`, and `harness/observe` routes.
 
 If `td-cli status` reports no running TouchDesigner instances:
 
@@ -326,6 +330,13 @@ If a visual result exists but you still do not see it:
 - route the output to a visible `Background TOP`, viewer, or window
 - use `td-cli screenshot` to verify that the TOP is actually rendering
 - check OP-reference parameters and prefer relative paths like `./out1`
+
+If `td-cli exec ... --verify` reports expression errors:
+
+- remember that TouchDesigner parameter expressions are Python expressions, not GLSL or JavaScript
+- prefer `math.sin(...)`, `math.cos(...)`, and `math.floor(...)` if you imported `math`, or use fully qualified expressions in your script setup
+- do not assume bare names like `sin`, `cos`, or `floor` exist in parameter expression scope
+- use `--verify-strict` in agent workflows so graph errors fail the command instead of being easy-to-miss warnings
 
 If the command is not found:
 
