@@ -35,7 +35,8 @@ def pos(o, x, y):
 
 
 # --- 0. cleanup --------------------------------------------------------------
-NAMES = ('ink_accum', 'ink_accum_pixeldat',
+NAMES = ('ink_source',
+         'ink_accum', 'ink_accum_pixeldat',
          'ink_fb',
          'ink_grad', 'ink_grad_pixeldat')
 for n in NAMES:
@@ -47,11 +48,19 @@ mask_merge = P.op('mask_merge')
 if mask_merge is None:
     raise RuntimeError('mask_merge missing - run td/build_ripple.py first')
 
+# --- 0b. ink_source: independently-blurred ink input -----------------------
+# Decoupled from Wave_ripples source so we can dissolve the circle outline
+# without softening the wave-sim impulse.
+ink_source = P.create(td.blurTOP, 'ink_source')
+ink_source.par.size = 50.0
+ink_source.inputConnectors[0].connect(mask_merge)
+pos(ink_source, -350, -300)
+
 # --- 1. ink_accum: max(current_mask, diffused-and-noise-warped prev * decay) -
 ink_accum = P.create(td.glslmultiTOP, 'ink_accum')
 ink_accum.par.outputresolution = 'useinput'
 ink_accum.par.format = 'rgba16float'
-ink_accum.inputConnectors[0].connect(mask_merge)
+ink_accum.inputConnectors[0].connect(ink_source)
 
 ink_accum.par.vec0name = 'inkparams'
 ink_accum.par.vec0valuex = 0.985    # decay per frame (~0.7s halflife)
@@ -190,11 +199,14 @@ new_tail = '''    // --- Depth tint by displacement magnitude ---
     float depthMix = clamp(length(grad) * 30.0, 0.0, 1.0) * params2.x;
     col = mix(col, col * vec3(0.82, 0.95, 1.12), depthMix * videoMask);
 
-    // --- Visible ink: cool desaturated tint where ink is dense ---
-    float inkAmt = clamp(texture(sTD2DInputs[2], uv).b, 0.0, 1.0);
+    // --- Visible ink: cool desaturated tint, only where the trail is dense ---
+    // smoothstep clips off the soft halo so the circular tracking source
+    // never reveals itself - only the saturated core gets tinted.
+    float inkRaw = clamp(texture(sTD2DInputs[2], uv).b, 0.0, 1.0);
+    float inkAmt = smoothstep(0.18, 0.65, inkRaw);
     float lumIn  = dot(col, vec3(0.299, 0.587, 0.114));
     vec3  inkCol = mix(col, vec3(lumIn) * vec3(0.55, 0.62, 0.78), 0.55);
-    col = mix(col, inkCol, clamp(inkAmt * 0.45, 0.0, 0.55) * videoMask);
+    col = mix(col, inkCol, inkAmt * 0.4 * videoMask);
 
     fragColor = TDOutputSwizzle(vec4(col, 1.0));'''
 if 'inkAmt' not in shader:
