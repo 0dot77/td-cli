@@ -174,20 +174,37 @@ wa.par.vec0valuex = 0.022     # lowered sim displace strength
 apply_dat = P.op('wave_apply_pixeldat')
 shader = apply_dat.text
 
-# 5a. inject warpGrad into grad combine
+# 5a. read warpGrad alongside (but separate from) grad
+# Critical: warpGrad is NOT folded into `grad` because that would inflate the
+# length(grad) used by chroma split / depth tint / normal calc, which produces
+# extreme RGB-fringing artifacts across the whole frame. Instead we apply
+# warpGrad directly to baseDisp below, so the chroma/depth/normal logic stays
+# tuned for the small sim+ambient gradient magnitudes.
 old_grad = "    // Combined surface gradient\n    vec2 grad = simGrad + ambGrad;"
 new_grad = (
-    "    // Ink-trail directional warp field (input[2])\n"
+    "    // Ink-trail directional warp field (input[2]) - kept separate from grad\n"
+    "    // so chroma/depth/normal calculations don't blow up.\n"
     "    vec2 warpGrad = texture(sTD2DInputs[2], uv).rg;\n"
-    "    // Combined surface gradient\n"
-    "    vec2 grad = simGrad + ambGrad + warpGrad;"
+    "    // Combined surface gradient (sim + ambient only - drives chroma/depth/normal)\n"
+    "    vec2 grad = simGrad + ambGrad;"
 )
 if "vec2 warpGrad = texture(sTD2DInputs[2], uv).rg;" not in shader:
     if old_grad in shader:
         shader = shader.replace(old_grad, new_grad, 1)
-        print('shader: warpGrad added')
+        print('shader: warpGrad read added (separate from grad)')
     else:
         print('WARNING: grad-combine marker not found')
+
+# 5a-2. apply warpGrad directly to baseDisp
+old_disp = "    vec2 baseDisp   = grad * params.x + nDisp;"
+new_disp = "    vec2 baseDisp   = grad * params.x + warpGrad * 0.018 + nDisp;"
+if "warpGrad * 0.018" in shader:
+    pass
+elif old_disp in shader:
+    shader = shader.replace(old_disp, new_disp, 1)
+    print('shader: warpGrad applied to baseDisp at 0.018 scale')
+else:
+    print('WARNING: baseDisp marker not found')
 
 # 5b. inject visible ink composite right before the final TDOutputSwizzle
 old_tail = '''    // --- Depth tint by displacement magnitude ---
