@@ -203,7 +203,8 @@ Commands:
   disconnect <src> <dst>         Disconnect operators
   dat read <path>                Read DAT content
   dat write <path> <content>     Write DAT content
-  screenshot [path] [-o file]    Capture TOP as PNG
+  screenshot [path] [-o file]
+              [--opaque]         Capture TOP as PNG (--opaque forces alpha=255)
   project info                   Project metadata
   project save [path]            Save project
   backup list [--limit N]        List recent backup artifacts
