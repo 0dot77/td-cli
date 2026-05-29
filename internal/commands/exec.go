@@ -17,7 +17,7 @@ type execResult struct {
 }
 
 // Exec executes Python code in TouchDesigner.
-func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verifyPath string, screenshotPath string) error {
+func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verifyPath string, verifyStrict bool, screenshotPath string, screenshotOutput string) error {
 	if filePath != "" {
 		data, err := os.ReadFile(filePath)
 		if err != nil {
@@ -88,19 +88,25 @@ func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verif
 			return nil
 		}
 
-		outPath := filepath.Join(".tmp", "preview.png")
-		if err := os.MkdirAll(".tmp", 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Screenshot warning: failed to create .tmp dir: %s\n", err)
-			return nil
+		outPath := screenshotOutput
+		if outPath == "" {
+			outPath = filepath.Join(".tmp", "preview.png")
+		}
+		outDir := filepath.Dir(outPath)
+		if outDir != "." {
+			if err := os.MkdirAll(outDir, 0755); err != nil {
+				fmt.Fprintf(os.Stderr, "Screenshot warning: failed to create output dir: %s\n", err)
+				return nil
+			}
 		}
 		if err := os.WriteFile(outPath, imgData, 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "Screenshot warning: failed to write file: %s\n", err)
 			return nil
 		}
 		if ssResult.Width > 0 && ssResult.Height > 0 {
-			fmt.Printf("Screenshot saved to .tmp/preview.png (%dx%d)\n", ssResult.Width, ssResult.Height)
+			fmt.Printf("Screenshot saved to %s (%dx%d)\n", outPath, ssResult.Width, ssResult.Height)
 		} else {
-			fmt.Printf("Screenshot saved to .tmp/preview.png\n")
+			fmt.Printf("Screenshot saved to %s\n", outPath)
 		}
 	}
 
@@ -121,7 +127,7 @@ func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verif
 					ConnectionCount int `json:"connectionCount"`
 				} `json:"graph"`
 				Issues struct {
-					IssueCount     int `json:"issueCount"`
+					IssueCount     int      `json:"issueCount"`
 					TargetErrors   []string `json:"targetErrors"`
 					TargetWarnings []string `json:"targetWarnings"`
 					Nodes          []struct {
@@ -149,6 +155,9 @@ func Exec(c *client.Client, code string, filePath string, jsonOutput bool, verif
 						for _, w := range n.Warnings {
 							fmt.Printf("  ⚠ %s: %s\n", n.Path, w)
 						}
+					}
+					if verifyStrict {
+						return fmt.Errorf("verify strict failed: %d issue(s) found at %s", ic, verifyPath)
 					}
 				} else {
 					fmt.Printf("Verify: %s — %d nodes, %d connections ✓\n",

@@ -3576,6 +3576,45 @@ def handle_cook_network(body):
 # --- ui ---
 
 
+def _first_network_pane():
+    panes = getattr(ui, "panes", [])
+    if panes:
+        return panes[0]
+    return None
+
+
+def _navigate_to_operator(target):
+    """Best-effort navigation that works across TD builds."""
+    pane = _first_network_pane()
+    if pane is None:
+        return False
+
+    try:
+        if getattr(target, "isCOMP", False):
+            pane.owner = target
+        else:
+            parent = target.parent() if hasattr(target, "parent") else None
+            pane.owner = parent or target
+        return True
+    except Exception:
+        return False
+
+
+def _select_operator(target):
+    parent = target.parent() if hasattr(target, "parent") else None
+    if parent is not None:
+        for child in getattr(parent, "children", []):
+            try:
+                child.selected = False
+            except Exception:
+                pass
+    try:
+        target.selected = True
+        return True
+    except Exception:
+        return False
+
+
 def handle_ui_navigate(body):
     path = body.get("path", "")
     if not path:
@@ -3583,7 +3622,8 @@ def handle_ui_navigate(body):
     target = op(path)
     if target is None:
         return _error(f"Operator not found: {path}")
-    ui.navigator.navigateTo(target)
+    if not _navigate_to_operator(target):
+        return _error("Could not navigate: no usable network pane found")
     return _success(f"Navigated to {path}")
 
 
@@ -3594,8 +3634,9 @@ def handle_ui_select(body):
     target = op(path)
     if target is None:
         return _error(f"Operator not found: {path}")
-    target.currentViewer = target
-    target.par.select = 1
+    _navigate_to_operator(target)
+    if not _select_operator(target):
+        return _error(f"Could not select {path}")
     return _success(f"Selected {path}")
 
 

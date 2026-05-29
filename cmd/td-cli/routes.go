@@ -19,8 +19,8 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 		return commands.Status(c, jsonOutput)
 
 	case "exec":
-		code, filePath, verifyPath, screenshotPath := parseExecArgs(args)
-		return commands.Exec(c, code, filePath, jsonOutput, verifyPath, screenshotPath)
+		opts := parseExecArgs(args)
+		return commands.Exec(c, opts.code, opts.filePath, jsonOutput, opts.verifyPath, opts.verifyStrict, opts.screenshotPath, opts.screenshotOutput)
 
 	case "ops":
 		return runOps(c, args, jsonOutput)
@@ -1229,23 +1229,38 @@ func runMedia(c *client.Client, args []string, jsonOutput bool) error {
 	}
 }
 
-func parseExecArgs(args []string) (code, filePath, verifyPath, screenshotPath string) {
+type execArgs struct {
+	code             string
+	filePath         string
+	verifyPath       string
+	verifyStrict     bool
+	screenshotPath   string
+	screenshotOutput string
+}
+
+func parseExecArgs(args []string) execArgs {
+	var opts execArgs
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-f" && i+1 < len(args) {
-			filePath = args[i+1]
+			opts.filePath = args[i+1]
 			i++
 		} else if args[i] == "--verify" && i+1 < len(args) {
-			verifyPath = args[i+1]
+			opts.verifyPath = args[i+1]
 			i++
+		} else if args[i] == "--verify-strict" {
+			opts.verifyStrict = true
 		} else if args[i] == "--screenshot" && i+1 < len(args) {
-			screenshotPath = args[i+1]
+			opts.screenshotPath = args[i+1]
+			i++
+		} else if args[i] == "-o" && i+1 < len(args) {
+			opts.screenshotOutput = args[i+1]
 			i++
 		} else {
-			if code != "" {
-				code += " "
+			if opts.code != "" {
+				opts.code += " "
 			}
-			code += args[i]
+			opts.code += args[i]
 		}
 	}
-	return
+	return opts
 }
