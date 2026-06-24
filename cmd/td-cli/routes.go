@@ -55,15 +55,18 @@ func runCommand(c *client.Client, command string, args []string, jsonOutput bool
 	case "screenshot":
 		path := ""
 		outputFile := ""
+		opaque := false
 		for i := 0; i < len(args); i++ {
 			if args[i] == "-o" && i+1 < len(args) {
 				outputFile = args[i+1]
 				i++
+			} else if args[i] == "--opaque" {
+				opaque = true
 			} else if path == "" {
 				path = args[i]
 			}
 		}
-		return commands.Screenshot(c, path, outputFile, jsonOutput)
+		return commands.Screenshot(c, path, outputFile, opaque, jsonOutput)
 
 	case "project":
 		return runProject(c, args, jsonOutput)
